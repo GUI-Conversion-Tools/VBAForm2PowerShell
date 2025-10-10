@@ -35,8 +35,8 @@
 | ------ | ------ |
 | Label | Label |
 | CommandButton | Button |
-| Frame (without Caption) | Panel |
-| Frame (with any Caption) | GroupBox |
+| Frame (Captionなし) | Panel |
+| Frame (Captionあり) | GroupBox |
 | TextBox | TextBox |
 | SpinButton | NumericUpDown |
 | ListBox | ListBox |
