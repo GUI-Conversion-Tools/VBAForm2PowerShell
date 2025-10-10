@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.0.0
+' VBAForm2PowerShell v1.0.1
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025 ZeeZeX
 ' This software is released under the MIT License.
@@ -906,7 +906,7 @@ Private Function Collection2Array(ByVal coll As Collection, Optional ByVal isSta
     Collection2Array = arr
 End Function
 
-Function Array2Collection(ByVal arr As Variant) As Collection
+Private Function Array2Collection(ByVal arr As Variant) As Collection
     ' Convert an array to a collection
     ' ArrayLength (Function) is dependency
     Dim coll As New Collection
@@ -922,7 +922,7 @@ Function Array2Collection(ByVal arr As Variant) As Collection
     Set Array2Collection = coll
 End Function
 
-Function ArrayLength(ByVal arr As Variant) As Long
+Private Function ArrayLength(ByVal arr As Variant) As Long
     ' Return the number of items in an array
     ' arr：Array to measure length
     ' if an array is empty, return 0
@@ -982,7 +982,7 @@ Exception:
     Exit Function
 End Function
 
-Function ReverseArray(ByVal srcArr As Variant) As Variant
+Private Function ReverseArray(ByVal srcArr As Variant) As Variant
     Dim newArr As Variant: ReDim newArr(LBound(srcArr) To UBound(srcArr))
     Dim newIdx As Long: newIdx = LBound(newArr)
     Dim i As Long: For i = UBound(srcArr) To LBound(srcArr) Step -1
@@ -997,7 +997,7 @@ Function ReverseArray(ByVal srcArr As Variant) As Variant
 End Function
 
 
-Function ReverseCollection(ByVal srcColl As Collection) As Collection
+Private Function ReverseCollection(ByVal srcColl As Collection) As Collection
     Dim resultColl As Collection
     Dim arr() As Variant
     If srcColl.Count > 0 Then
