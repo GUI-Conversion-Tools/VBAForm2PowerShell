@@ -54,7 +54,7 @@
 ## 使い方
 使用前に、変換したいユーザーフォームが作成されたExcelブックを用意する必要があります<br>
 また、VBE上でイミディエイトウィンドウが表示されていない場合は表示の設定を行ってください<br><br>
-<img width="843" height="768" alt="Image" src="https://github.com/user-attachments/assets/676cd54c-d610-4c25-bd9a-9e064e38dc5e" /><br><br>
+<img width="807" height="768" alt="Image" src="https://github.com/user-attachments/assets/b023597f-6f9e-4223-a9a4-1c7c499c194b" /><br><br>
 1.[ここ](https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell/releases)から最新版のファイルをダウンロードし解凍してください、中のVBAForm2PowerShell.basを使用します<br>
 2. Excelの開発→Visual BasicからVBEを開いてください<br>
 3. プロジェクトを右クリックし、「ファイルのインポート」よりVBAForm2PowerShell.basをインポートします<br>
