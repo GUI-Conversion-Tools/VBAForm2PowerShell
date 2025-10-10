@@ -1,5 +1,5 @@
 # VBAForm2PowerShell - Excel VBA UserForm to PowerShell GUI (WinForms) Converter
-:jp:[日本語の説明はこちら](https://github.com/GUI-Conversion-Tools/VBAForm2Tkinter/blob/main/README_ja.md)<br><br>
+:jp:[日本語の説明はこちら](https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell/blob/main/README_ja.md)<br><br>
 This program converts userforms created in Microsoft Excel VBA into PowerShell (WinForms) code.<br>
 
 ## Example
