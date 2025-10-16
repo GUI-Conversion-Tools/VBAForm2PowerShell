@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.0.1
+' VBAForm2PowerShell v1.0.2
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025 ZeeZeX
 ' This software is released under the MIT License.
@@ -12,51 +12,20 @@ Option Explicit
 #If VBA7 Then
     ' 64bit Office / VBA7 or later
     Private Declare PtrSafe Function GetSysColor Lib "user32" (ByVal nIndex As Long) As Long
-#Else
-    ' 32bit Office
-    Private Declare Function GetSysColor Lib "user32" (ByVal nIndex As Long) As Long
-#End If
-
-#If VBA7 Then
-    Private Declare PtrSafe Function FindWindowW Lib "user32" ( _
-        ByVal lpClassName As LongPtr, _
-        ByVal lpWindowName As LongPtr) As LongPtr
-#Else
-    Private Declare Function FindWindowW Lib "user32" ( _
-        ByVal lpClassName As Long, _
-        ByVal lpWindowName As Long) As Long
-#End If
-
-#If VBA7 Then
-    Private Declare PtrSafe Function GetClientRect Lib "user32" ( _
-        ByVal hwnd As LongPtr, lpRect As RECT) As Long
-    Private Declare PtrSafe Function GetWindowRect Lib "user32" ( _
-        ByVal hwnd As LongPtr, lpRect As RECT) As Long
-    Private Type RECT
-        Left As Long
-        Top As Long
-        Right As Long
-        Bottom As Long
-    End Type
-#Else
-    Private Declare Function GetClientRect Lib "user32" ( _
-        ByVal hwnd As Long, lpRect As RECT) As Long
-    Private Declare Function GetWindowRect Lib "user32" ( _
-        ByVal hwnd As Long, lpRect As RECT) As Long
-    Private Type RECT
-        Left As Long
-        Top As Long
-        Right As Long
-        Bottom As Long
-    End Type
-#End If
-
-
-#If VBA7 Then
+    Private Declare PtrSafe Function FindWindowW Lib "user32" (ByVal lpClassName As LongPtr, ByVal lpWindowName As LongPtr) As LongPtr
+    Private Declare PtrSafe Function GetClientRect Lib "user32" (ByVal hwnd As LongPtr, lpRect As RECT) As Long
+    Private Declare PtrSafe Function GetWindowRect Lib "user32" (ByVal hwnd As LongPtr, lpRect As RECT) As Long
+    Private Type RECT: Left As Long: Top As Long: Right As Long: Bottom As Long: End Type
     Private Declare PtrSafe Function GetDC Lib "user32" (ByVal hwnd As LongPtr) As LongPtr
     Private Declare PtrSafe Function ReleaseDC Lib "user32" (ByVal hwnd As LongPtr, ByVal hdc As LongPtr) As Long
     Private Declare PtrSafe Function GetDeviceCaps Lib "gdi32" (ByVal hdc As LongPtr, ByVal nIndex As Long) As Long
 #Else
+    ' 32bit Office
+    Private Declare Function GetSysColor Lib "user32" (ByVal nIndex As Long) As Long
+    Private Declare Function FindWindowW Lib "user32" (ByVal lpClassName As Long, ByVal lpWindowName As Long) As Long
+    Private Declare Function GetClientRect Lib "user32" (ByVal hwnd As Long, lpRect As RECT) As Long
+    Private Declare Function GetWindowRect Lib "user32" (ByVal hwnd As Long, lpRect As RECT) As Long
+    Private Type RECT: Left As Long: Top As Long: Right As Long: Bottom As Long: End Type
     Private Declare Function GetDC Lib "user32" (ByVal hwnd As Long) As Long
     Private Declare Function ReleaseDC Lib "user32" (ByVal hwnd As Long, ByVal hdc As Long) As Long
     Private Declare Function GetDeviceCaps Lib "gdi32" (ByVal hdc As Long, ByVal nIndex As Long) As Long
@@ -519,9 +488,9 @@ Private Function Convert2PowerShellFormatText(ByVal text As String) As String
     ' Escape special characters in the string
     Dim targetChars() As Variant
     Dim char As Variant
-    targetChars = Array("`", """", "'", "$", "(", "(", "{", "}", "[", "]", "|", "&", ";", "<", ">", "*", "?")
+    targetChars = Array("`", """", "$", "{", "}")
     For Each char In targetChars
-        text = VBA.Replace(text, char, char & "`")
+        text = VBA.Replace(text, char, "`" & char)
     Next
     ' Convert VBA line breaks to PowerShell format
     ' vbCrLf should be replaced first
@@ -567,7 +536,7 @@ Private Function GenerateBatchCode() As String
     "if /i %CHK%==EXIT exit /b", _
     "pause", _
     "exit /b", _
-    "　#>", _
+    "#>", _
     "# The following is PowerShell code." _
     )
     code = Join(codeArray, vbLf)
@@ -606,7 +575,7 @@ Private Function ContainsValue(ByVal itemList As Variant, ByVal value As Variant
     End If
     If IsArray(itemList) Then
         On Error GoTo Finally
-        ' Empty array -> False
+        ' Empty (not initialized) array -> False
         temp = LBound(itemList)
         On Error GoTo 0
     End If
@@ -879,7 +848,6 @@ Private Function SortFormControlsByDepth(ByVal frmControls As Variant) As Collec
     Set SortFormControlsByDepth = sortedColl
 End Function
 
-
 Private Function Collection2Array(ByVal coll As Collection, Optional ByVal isStartIdx1 As Boolean = False) As Variant()
     ' Convert a Collection to an array
     ' If isStartIdx1 is True, create an array starting from index 1 (to match Collection numbering)
@@ -902,6 +870,8 @@ Private Function Collection2Array(ByVal coll As Collection, Optional ByVal isSta
             End If
             idx = idx + 1
         Next
+    Else
+        arr = Array()
     End If
     Collection2Array = arr
 End Function
@@ -911,34 +881,43 @@ Private Function Array2Collection(ByVal arr As Variant) As Collection
     ' ArrayLength (Function) is dependency
     Dim coll As New Collection
     Dim i As Long
+    
+    If Not IsArray(arr) Then
+        Err.Raise Number:=13
+        Exit Function
+    End If
+    
     If ArrayLength(arr) > 0 Then
         For i = LBound(arr) To UBound(arr)
             coll.Add arr(i)
         Next i
-    ElseIf ArrayLength(arr) = -1 Then
-        Err.Raise Number:=513, Description:="Invalid Parameter"
-        Exit Function
     End If
     Set Array2Collection = coll
 End Function
 
 Private Function ArrayLength(ByVal arr As Variant) As Long
     ' Return the number of items in an array
-    ' arr：Array to measure length
-    ' if an array is empty, return 0
-    ' If a parameter is not array, return -1
-On Error GoTo EMPTY_ARR
-    If IsArray(arr) Then
-        ArrayLength = UBound(arr) + (1 - LBound(arr))
-    Else
-        ArrayLength = -1
+    ' arr: Array to measure length
+    ' if an array is empty (not initialized), return 0
+    Dim temp As Variant
+    If Not IsArray(arr) Then
+        Err.Raise Number:=13
+        Exit Function
     End If
+    
+    On Error GoTo Exception
+    temp = LBound(arr)
+    On Error GoTo 0
+    
+    ArrayLength = UBound(arr) + (1 - LBound(arr))
     Exit Function
-EMPTY_ARR:
-    If Err.Number = 9 Then
-        ' Error (out of index)
-        ArrayLength = 0
+Exception:
+    ' Empty (not initialized) array
+    If Err.Number <> 9 Then
+        Err.Raise Number:=Err.Number
+        Exit Function
     End If
+    ArrayLength = 0
 End Function
 
 Private Sub InsertionSortJaggedArray(ByRef arr As Variant)
