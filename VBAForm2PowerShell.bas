@@ -1,8 +1,8 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.0.2
+' VBAForm2PowerShell v1.0.3
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
-' Copyright (c) 2025 ZeeZeX
+' Copyright (c) 2025-2026 ZeeZeX
 ' This software is released under the MIT License.
 ' https://opensource.org/licenses/MIT
 
@@ -32,7 +32,7 @@ Option Explicit
 #End If
 
 
-Sub RunConversion2PS()
+Sub TestRunConversion2PS()
     Call ConvertForm2PS(UserForm1)
 End Sub
 
@@ -566,27 +566,23 @@ Private Function ContainsValue(ByVal itemList As Variant, ByVal value As Variant
     ' Check if a specific value exists in Array/Collection/Dictionary
     ' itemList - Array/Collection/Dictionary to search
     ' value - value to check
-    Dim result As Boolean
+    ' Performs strict type comparison for non-numeric values
+    ' Nested arrays are not supported. Objects are compared by reference
+    ' Dependency: IsStrictlyEqual(helper function)
     Dim item As Variant
     Dim temp As Variant
-    result = False
     If LCase(TypeName(itemList)) = "dictionary" Then
         itemList = itemList.items
     End If
     If IsArray(itemList) Then
         On Error GoTo Finally
-        ' Empty (not initialized) array -> False
+        ' Uninitialized Array -> False
         temp = LBound(itemList)
         On Error GoTo 0
     End If
     For Each item In itemList
-        If IsObject(item) Then
-            If IsObject(value) Then If item Is value Then result = True
-        Else
-            If Not IsObject(value) Then If item = value Then result = True
-        End If
-        
-        If result Then
+    
+        If IsStrictlyEqual(item, value) Then
             ContainsValue = True
             Exit Function
         End If
@@ -594,6 +590,60 @@ Private Function ContainsValue(ByVal itemList As Variant, ByVal value As Variant
 Finally:
     ContainsValue = False
     
+End Function
+
+Private Function IsStrictlyEqual(ByVal value1 As Variant, ByVal value2 As Variant) As Boolean
+    ' Performs a strict equality comparison including data types.
+    ' Numeric types (Integer, Long, Double, etc.) are treated as compatible.
+    ' Boolean and Date types are NOT treated as numeric.
+    Dim t1 As VbVarType, t2 As VbVarType
+    t1 = VarType(value1)
+    t2 = VarType(value2)
+    
+    ' Returns True if objects point to the same reference.
+    ' Objects are evaluated first to prevent false matches (e.g., Empty vs empty Cells).
+    ' (Also applies to variables holding both objects and other data types)
+    If IsObject(value1) Or IsObject(value2) Then
+        If IsObject(value1) And IsObject(value2) Then
+            IsStrictlyEqual = (value1 Is value2)
+        End If
+        Exit Function
+    End If
+    
+    ' Null / Empty
+    If IsNull(value1) Or IsNull(value2) Then
+        IsStrictlyEqual = (IsNull(value1) And IsNull(value2))
+        Exit Function
+    ElseIf IsEmpty(value1) Or IsEmpty(value2) Then
+        IsStrictlyEqual = (IsEmpty(value1) And IsEmpty(value2))
+        Exit Function
+    End If
+    
+    
+    ' Arrays are not supported (Extend if necessary).
+    If IsArray(value1) Or IsArray(value2) Then
+        IsStrictlyEqual = False
+        Exit Function
+    End If
+    
+    ' Error values
+    If t1 = vbError Or t2 = vbError Then
+        IsStrictlyEqual = (t1 = t2 And value1 = value2)
+        Exit Function
+    End If
+    
+    ' String, Date, Boolean
+    If (t1 = vbString Or t2 = vbString) Or (t1 = vbDate Or t2 = vbDate) Or (t1 = vbBoolean Or t2 = vbBoolean) Then
+        IsStrictlyEqual = (t1 = t2 And value1 = value2)
+        Exit Function
+    End If
+    
+    ' Other data types (e.g., Numeric)
+    On Error Resume Next
+    IsStrictlyEqual = (value1 = value2)
+    Exit Function
+    On Error GoTo 0
+    IsStrictlyEqual = False
 End Function
 
 Private Function Win32_FindWindowW(ByVal className As String, ByVal windowTitle As String) As LongPtr
@@ -708,9 +758,10 @@ Private Sub SaveUTF8BOMText(ByVal filePath As String, ByVal textData As String)
     Dim stream As Object
     Dim bytes() As Byte
     
-    ' Normalize line endings to Windows style
-    textData = VBA.Replace(textData, vbCr, vbCrLf)
-    textData = VBA.Replace(textData, vbLf, vbCrLf)
+    ' Normalize line endings
+    textData = VBA.Replace(textData, vbCrLf, vbLf)
+    textData = VBA.Replace(textData, vbCr, vbLf)
+    textData = VBA.Replace(textData, vbLf, vbNewLine)
     
     ' Convert to UTF-8 and remove BOM
     Set stream = CreateObject("ADODB.Stream")
@@ -739,9 +790,10 @@ Private Sub SaveUTF8Text_NoBOM(ByVal filePath As String, ByVal textData As Strin
     Dim stream As Object
     Dim bytes() As Byte
     
-    ' Normalize line endings to Windows style
-    textData = VBA.Replace(textData, vbCr, vbCrLf)
-    textData = VBA.Replace(textData, vbLf, vbCrLf)
+    ' Normalize line endings
+    textData = VBA.Replace(textData, vbCrLf, vbLf)
+    textData = VBA.Replace(textData, vbCr, vbLf)
+    textData = VBA.Replace(textData, vbLf, vbNewLine)
     
     ' Convert to UTF-8 and remove BOM
     Set stream = CreateObject("ADODB.Stream")
@@ -840,7 +892,7 @@ Private Function SortFormControlsByDepth(ByVal frmControls As Variant) As Collec
     Next ctrl
     If tempColl.Count > 0 Then
         tempArray = Collection2Array(tempColl)
-        Call InsertionSortJaggedArray(tempArray)
+        Call InsertionSortJaggedArray(tempArray, reverse:=False)
         For Each item In tempArray
             sortedColl.Add item(1)
         Next item
@@ -920,13 +972,33 @@ Exception:
     ArrayLength = 0
 End Function
 
-Private Sub InsertionSortJaggedArray(ByRef arr As Variant)
-    ' Perform insertion sort in ascending order based on the numeric value of index 0 in each nested array
-    ' Example: [[1, "A"], [3, "B"], [2, "C"]] -> [[1, "A"], [2, "C"], [3, "B"]]
-    ' Does not affect the relative order of items with the same numeric value
-    ' Example: [[3, "C"], [3, "A"], [1, "A"], [3, "B"]] -> [[1, "A"], [3, "C"], [3, "A"], [3, "B"]]
+Private Sub InsertionSortJaggedArray(ByRef arr As Variant, _
+    Optional ByVal reverse As Boolean = False, _
+    Optional ByVal strSort As Boolean = False, _
+    Optional ByVal ignoreCase As Boolean = True)
+    
+    ' Sorts a jagged array using the Insertion Sort algorithm based on the first element of each nested array.
+    '   e.g., [[1, "A"], [3, "B"], [2, "C"]] -> [[1, "A"], [2, "C"], [3, "B"]]
+    '   Does not affect the relative order of items with the same numeric value
+    '   e.g., [[3, "C"], [3, "A"], [1, "A"], [3, "B"]] -> [[1, "A"], [3, "C"], [3, "A"], [3, "B"]]
+    ' reverse: Set to True for descending order.
+    '   e.g., [[1, "A"], [3, "B"], [2, "C"]] -> [[3, "B"], [2, "C"], [1, "A"]]
+    ' strSort: Set to True for string-based comparison, False for numeric comparison.
+    ' ignoreCase: Valid only when strSort is True. Set to True to perform case-insensitive comparison.
+    ' Dependency: DynamicCompare
+    If Not IsArray(arr) Then Err.Raise Number:=13
     Dim minIndex As Long
     Dim maxIndex As Long
+    Dim idxToRef1 As Long
+    Dim idxToRef2 As Long
+    Dim op As String
+    
+    If reverse Then
+        op = "<"
+    Else
+        op = ">"
+    End If
+    
     minIndex = LBound(arr)
     maxIndex = UBound(arr)
     Dim i As Long, j As Long
@@ -934,7 +1006,9 @@ Private Sub InsertionSortJaggedArray(ByRef arr As Variant)
     For i = minIndex + 1 To maxIndex
         swap = arr(i)
         For j = i - 1 To minIndex Step -1
-            If arr(j)(0) > swap(0) Then
+            idxToRef1 = LBound(arr(j))
+            idxToRef2 = LBound(swap)
+            If DynamicCompare(arr(j)(idxToRef1), swap(idxToRef2), op, strSort, ignoreCase) Then
                 arr(j + 1) = arr(j)
             Else
                 Exit For
@@ -943,6 +1017,61 @@ Private Sub InsertionSortJaggedArray(ByRef arr As Variant)
         arr(j + 1) = swap
     Next
 End Sub
+
+
+Private Function DynamicCompare(ByVal a As Variant, ByVal b As Variant, ByVal op As String, _
+    Optional ByVal shouldStrComp As Boolean = False, Optional ByVal ignoreCase As Boolean = True) As Boolean
+    ' Performs dynamic comparison using a string representation of an operator.
+    ' a, b: Values to compare.
+    ' op: Comparison operator as a string (">", ">=", "<", "<=", "=", "<>").
+    ' shouldStrComp: Set to True for string comparison mode, False for numeric/default comparison.
+    ' ignoreCase: Valid only when shouldStrComp is True. Set to True to ignore case sensitivity.
+    Dim result As Boolean
+    Dim compareMode As VbCompareMethod
+    
+    If shouldStrComp Then
+        If ignoreCase Then
+            compareMode = vbTextCompare
+        Else
+            compareMode = vbBinaryCompare
+        End If
+        
+        Select Case op
+            Case ">"
+                result = StrComp(a, b, compareMode) > 0
+            Case ">="
+                result = StrComp(a, b, compareMode) >= 0
+            Case "<"
+                result = StrComp(a, b, compareMode) < 0
+            Case "<="
+                result = StrComp(a, b, compareMode) <= 0
+            Case "="
+                result = StrComp(a, b, compareMode) = 0
+            Case "<>"
+                result = StrComp(a, b, compareMode) <> 0
+            Case Else
+                Err.Raise vbObjectError, , "Unknown operator: " & op
+        End Select
+    Else
+        Select Case op
+            Case ">"
+                result = (a > b)
+            Case ">="
+                result = (a >= b)
+            Case "<"
+                result = (a < b)
+            Case "<="
+                result = (a <= b)
+            Case "="
+                result = (a = b)
+            Case "<>"
+                result = (a <> b)
+            Case Else
+                Err.Raise vbObjectError, , "Unknown operator: " & op
+        End Select
+    End If
+    DynamicCompare = result
+End Function
 
 Private Function CollContainsKey(ByVal coll As Collection, ByVal strKey As String) As Boolean
     ' Check if a specific key exists in the Collection
