@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.0.3
+' VBAForm2PowerShell v1.0.4
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025-2026 ZeeZeX
 ' This software is released under the MIT License.
@@ -496,7 +496,7 @@ Private Function Convert2PowerShellFormatText(ByVal text As String) As String
     ' vbCrLf should be replaced first
     text = VBA.Replace(text, vbCrLf, vbLf)
     text = VBA.Replace(text, vbCr, vbLf)
-    text = VBA.Replace(text, vbLf, "`n")
+    text = VBA.Replace(text, vbLf, "`r`n")
     Convert2PowerShellFormatText = text
 End Function
 
