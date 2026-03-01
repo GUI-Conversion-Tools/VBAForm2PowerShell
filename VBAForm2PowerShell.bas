@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.0.4
+' VBAForm2PowerShell v1.1.0
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025-2026 ZeeZeX
 ' This software is released under the MIT License.
@@ -31,17 +31,36 @@ Option Explicit
     Private Declare Function GetDeviceCaps Lib "gdi32" (ByVal hdc As Long, ByVal nIndex As Long) As Long
 #End If
 
+Private Const FORM_WINDOW_NAME As String = "window"
 
 Sub TestRunConversion2PS()
     Call ConvertForm2PS(UserForm1)
 End Sub
 
+Sub TestRunConversion2PS_2()
+    Call ConvertForm2PS(Array(UserForm1, UserForm2))
+End Sub
 
-Sub ConvertForm2PS(ByVal frm As Object, Optional ByVal saveAsBat As Boolean = False)
+Sub TestRunConversion2PS_3()
+    Call ConvertForm2PS(UserForm1, saveAsBat:=True, useCls:=True)
+End Sub
+
+Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boolean = False, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False)
+    
+    ' frms: Variant
+    '   Accepts a single UserForm object or an Array of UserForm objects to be converted.
+    ' saveAsBat: Boolean
+    '   If set to True, the generated PowerShell script will be saved as a .bat file that can be executed by double-clicking.
+    ' useCls: Boolean
+    '   If set to True, the generated PowerShell code will wrap each form in a PowerShell class structure.
+    '   This is automatically set to True if frms is an array.
+    ' noMainLoop: Boolean
+    '   If set to True, the .ShowDialog() call will be omitted from the end of the generated PowerShell script.
+    
     Dim code As String
     Dim filePath As String
     Dim saveDir As String
-    code = VBAForm2PSWinForms(frm)
+    code = VBAForm2PSWinForms(frms, useCls, noMainLoop)
     If code <> "" Then
         If ThisWorkbook.Path = "" Then
             saveDir = "C:"
@@ -65,7 +84,19 @@ Sub ConvertForm2PS(ByVal frm As Object, Optional ByVal saveAsBat As Boolean = Fa
 End Sub
 
 
-Function VBAForm2PSWinForms(ByVal root As Object) As String
+Function VBAForm2PSWinForms(ByVal frms As Variant, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False) As String
+    Dim root As Variant
+    Dim indent As String
+    Dim prefix As String
+    Dim clsNumber As Long
+    Dim formName As String
+    Dim controlName As String
+    Dim parentName As String
+    Dim childName As String
+    Dim itemsListName As String
+    Dim instanceName As String
+    Dim toplevelInstanceName As String
+    Dim unavailableNames() As Variant
     Dim ctrl As MSForms.Control
     Dim ctrls As Collection
     Dim item As Variant
@@ -93,52 +124,122 @@ Function VBAForm2PSWinForms(ByVal root As Object) As String
     
     r = ""
     
-    dpis = GetPrimaryMonitorDPI
-    scaleFactorX = dpis(0) / 96
-    scaleFactorY = dpis(1) / 96
+    If IsArray(frms) Then
+        useCls = True
+    Else
+        frms = Array(frms)
+    End If
     
-    ' Get factor for size conversion
-    sizeFactorsAndOffsets = GetUserFormScaleFactorsAndOffsets(root)
-    sizeFactorX = sizeFactorsAndOffsets(0)
-    sizeFactorY = sizeFactorsAndOffsets(1)
-    ' Convert UserForm's size to pixel size
-    pixelWidth = UserFormSizeToPixel(root.Width, sizeFactorX)
-    pixelHeight = UserFormSizeToPixel(root.Height, sizeFactorY)
-    pixelWidth = pixelWidth - sizeFactorsAndOffsets(2)
-    pixelHeight = pixelHeight - sizeFactorsAndOffsets(3)
-    ' Divide window size by scaling factor
-    pixelWidth = Round(pixelWidth / scaleFactorX)
-    pixelHeight = Round(pixelHeight / scaleFactorY)
+    If useCls Then
+        indent = "        "
+        prefix = "$this."
+    Else
+        indent = ""
+        prefix = "$"
+    End If
     
     r = r & "Add-Type -AssemblyName System.Windows.Forms" & vbLf
     r = r & "Add-Type -AssemblyName System.Drawing" & vbLf
+    r = r & "[System.Windows.Forms.Application]::EnableVisualStyles()" & vbLf
     r = r & vbLf
-    r = r & "$" & root.Name & " = " & "New-Object System.Windows.Forms.Form" & vbLf
-    caption = root.caption
-    caption = Convert2PowerShellFormatText(caption)
-    r = r & "$" & root.Name & ".Text = " & q & caption & q & vbLf
-    r = r & "$" & root.Name & ".ClientSize = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
-    r = r & "$" & root.Name & ".MaximizeBox = $false" & vbLf
-    r = r & "$" & root.Name & ".FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle" & vbLf ' Disable window resizing
-    r = r & "$" & root.Name & ".BackColor = [System.Drawing.ColorTranslator]::FromHtml(" & q & FormColorToHex(root.BackColor) & q & ")" & vbLf
-    r = r & "$" & root.Name & ".AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None" & vbLf
     
-    cursorType = GetControlCursorType(root)
-    If cursorType <> "" Then
-        r = r & "$" & root.Name & ".Cursor = " & "[System.Windows.Forms.Cursors]::" & cursorType & vbLf
-    Else
-        r = r & "$" & root.Name & ".Cursor = $null" & vbLf
-    End If
-    
-    r = r & vbLf
-    Set ctrls = New Collection
-    For Each ctrl In root.Controls
-        ctrls.Add ctrl
-    Next ctrl
-    Set ctrls = ReverseCollection(ctrls)
-    Set ctrls = SortFormControlsByDepth(ctrls)
-    For Each ctrl In ctrls
-        If GetWinFormsControlName(ctrl) <> "" Then
+    For Each root In frms
+        unavailableNames = VBA.Array("", "System")
+        
+        For i = LBound(unavailableNames) To UBound(unavailableNames)
+            unavailableNames(i) = LCase(unavailableNames(i))
+        Next
+        
+        If ContainsValue(unavailableNames, LCase(root.Name)) Then
+            MsgBox GenerateUnavailableNameMessage(root)
+            r = ""
+            VBAForm2PSWinForms = r
+            Exit Function
+        End If
+        unavailableNames(0) = LCase(FORM_WINDOW_NAME)
+        
+        dpis = GetPrimaryMonitorDPI
+        scaleFactorX = dpis(0) / 96
+        scaleFactorY = dpis(1) / 96
+        
+        ' Get factor for size conversion
+        sizeFactorsAndOffsets = GetUserFormScaleFactorsAndOffsets(root)
+        sizeFactorX = sizeFactorsAndOffsets(0)
+        sizeFactorY = sizeFactorsAndOffsets(1)
+        ' Convert UserForm's size to pixel size
+        pixelWidth = UserFormSizeToPixel(root.Width, sizeFactorX)
+        pixelHeight = UserFormSizeToPixel(root.Height, sizeFactorY)
+        pixelWidth = pixelWidth - sizeFactorsAndOffsets(2)
+        pixelHeight = pixelHeight - sizeFactorsAndOffsets(3)
+        ' Divide window size by scaling factor
+        pixelWidth = Round(pixelWidth / scaleFactorX)
+        pixelHeight = Round(pixelHeight / scaleFactorY)
+        
+        formName = GetControlName(root, prefix, useCls)
+        
+        Set ctrls = New Collection
+        For Each ctrl In root.Controls
+            ctrls.Add ctrl
+        Next ctrl
+        Set ctrls = ReverseCollection(ctrls)
+        Set ctrls = SortFormControlsByDepth(ctrls)
+        
+        If useCls Then
+            r = r & "class " & root.Name & "{" & vbLf
+            ' Declare instance variables
+            r = r & "    " & "[object]$" & FORM_WINDOW_NAME & vbLf
+            For Each ctrl In ctrls
+                r = r & "    " & "[object]$" & ctrl.Name & vbLf
+                If ContainsValue(Array("ComboBox", "ListBox"), TypeName(ctrl)) Then
+                    itemsListName = ctrl.Name & "_items_value"
+                    r = r & "    " & "[object]$" & itemsListName & vbLf
+                End If
+                
+                If TypeName(ctrl) = "MultiPage" Then
+                    For Each item In ctrl.Pages
+                        r = r & "    " & "[object]$" & item.Name & vbLf
+                    Next
+                End If
+            Next
+            r = r & "    " & root.Name & "() {" & vbLf
+        End If
+        
+        r = r & indent & formName & " = " & "New-Object System.Windows.Forms.Form" & vbLf
+        
+        caption = root.caption
+        caption = Convert2PowerShellFormatText(caption)
+        r = r & indent & formName & ".Text = " & q & caption & q & vbLf
+        r = r & indent & formName & ".ClientSize = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
+        r = r & indent & formName & ".MaximizeBox = $false" & vbLf
+        r = r & indent & formName & ".FormBorderStyle = " & DotNetTypeLiteral("System.Windows.Forms.FormBorderStyle", useCls) & "::FixedSingle" & vbLf ' Disable window resizing
+        r = r & indent & formName & ".BackColor = " & q & FormColorToHex(root.BackColor) & q & vbLf
+        r = r & indent & formName & ".AutoScaleMode = " & DotNetTypeLiteral("System.Windows.Forms.AutoScaleMode", useCls) & "::None" & vbLf
+        
+        
+        cursorType = GetControlCursorType(root)
+        If cursorType <> "" Then
+            r = r & indent & formName & ".Cursor = " & DotNetTypeLiteral("System.Windows.Forms.Cursors", useCls) & "::" & cursorType & vbLf
+        Else
+            r = r & indent & formName & ".Cursor = $null" & vbLf
+        End If
+        
+        r = r & vbLf
+
+        For Each ctrl In ctrls
+            If GetWinFormsControlName(ctrl) = "" Then
+                MsgBox GenerateUnsupportedControlMessage(ctrl)
+                r = ""
+                VBAForm2PSWinForms = r
+                Exit Function
+            End If
+            
+            If ContainsValue(unavailableNames, LCase(ctrl.Name)) Then
+                MsgBox GenerateUnavailableNameMessage(ctrl)
+                r = ""
+                VBAForm2PSWinForms = r
+                Exit Function
+            End If
+            
             widgetType = "System.Windows.Forms." & GetWinFormsControlName(ctrl)
             
             pixelLeft = UserFormSizeToPixel(ctrl.Left, sizeFactorX)
@@ -151,35 +252,39 @@ Function VBAForm2PSWinForms(ByVal root As Object) As String
             pixelWidth = Round(pixelWidth / scaleFactorX)
             pixelHeight = Round(pixelHeight / scaleFactorY)
             
-            r = r & "$" & ctrl.Name & " = " & "New-Object" & " " & widgetType & vbLf
-            r = r & "$" & ctrl.Parent.Name & ".Controls.Add($" & ctrl.Name & ")" & vbLf
-            r = r & "$" & ctrl.Name & ".Location = New-Object System.Drawing.Point(" & pixelLeft & ", " & pixelTop & ")" & vbLf
-            r = r & "$" & ctrl.Name & ".Size = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
+            controlName = GetControlName(ctrl, prefix, useCls)
+            parentName = GetParentName(ctrl, prefix, useCls)
+            itemsListName = controlName & "_items_value"
+            
+            r = r & indent & controlName & " = " & "New-Object" & " " & widgetType & vbLf
+            r = r & indent & parentName & ".Controls.Add(" & controlName & ")" & vbLf
+            r = r & indent & controlName & ".Location = New-Object System.Drawing.Point(" & pixelLeft & ", " & pixelTop & ")" & vbLf
+            r = r & indent & controlName & ".Size = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
             
             If GetWinFormsControlName(ctrl) = "GroupBox" Or Not ContainsValue(Array("Frame", "Image", "ScrollBar", "MultiPage"), TypeName(ctrl)) Then
                 ' Set ForeColor
-                r = r & "$" & ctrl.Name & ".ForeColor = [System.Drawing.ColorTranslator]::FromHtml(" & q & FormColorToHex(ctrl.ForeColor) & q & ")" & vbLf
+                r = r & indent & controlName & ".ForeColor = " & q & FormColorToHex(ctrl.ForeColor) & q & vbLf
             End If
             
             If Not ContainsValue(Array("ScrollBar"), TypeName(ctrl)) Then
                 ' Set BackColor
-                colorSetting = "[System.Drawing.ColorTranslator]::FromHtml(" & q & FormColorToHex(ctrl.BackColor) & q & ")"
+                colorSetting = q & FormColorToHex(ctrl.BackColor) & q
                 If ContainsValue(Array("Label", "TextBox", "CommandButton", "CheckBox", "ToggleButton", "OptionButton", "Image", "ComboBox"), TypeName(ctrl)) Then
                     If ctrl.BackStyle = fmBackStyleTransparent Then
                         If Not ContainsValue(Array("TextBox", "ComboBox"), TypeName(ctrl)) Then
-                            colorSetting = "[System.Drawing.Color]::TransParent"
+                            colorSetting = DotNetTypeLiteral("System.Drawing.Color", useCls) & "::Transparent"
                         Else
-                            ' Apply the BackColor of the parent control because TextBox and ComboBox do not support [System.Drawing.Color]::TransParent
+                            ' Apply the BackColor of the parent control because TextBox and ComboBox do not support [System.Drawing.Color]::Transparent
                             If TypeName(ctrl.Parent) <> "Page" Then
-                                colorSetting = "[System.Drawing.ColorTranslator]::FromHtml(" & q & FormColorToHex(ctrl.Parent.BackColor) & q & ")"
+                                colorSetting = q & FormColorToHex(ctrl.Parent.BackColor) & q
                             Else
                                 ' Because the Page control does not have a BackColor property, set the color to &H8000000F&, which matches the background color of the Page
-                                colorSetting = "[System.Drawing.ColorTranslator]::FromHtml(" & q & FormColorToHex(&H8000000F) & q & ")"
+                                colorSetting = q & FormColorToHex(&H8000000F) & q
                             End If
                         End If
                     End If
                 End If
-                r = r & "$" & ctrl.Name & ".BackColor = " & colorSetting & vbLf
+                r = r & indent & controlName & ".BackColor = " & colorSetting & vbLf
                 
             End If
             
@@ -187,49 +292,54 @@ Function VBAForm2PSWinForms(ByVal root As Object) As String
             If GetWinFormsControlName(ctrl) = "GroupBox" Or ContainsValue(Array("Label", "CommandButton", "CheckBox", "ToggleButton", "OptionButton"), TypeName(ctrl)) Then
                 caption = ctrl.caption
                 caption = Convert2PowerShellFormatText(caption)
-                r = r & "$" & ctrl.Name & ".Text = " & q & caption & q & vbLf
+                r = r & indent & controlName & ".Text = " & q & caption & q & vbLf
             End If
             
             If ContainsValue(Array("CheckBox", "OptionButton"), TypeName(ctrl)) Then
                 If ctrl.Alignment = fmAlignmentLeft Then
-                    r = r & "$" & ctrl.Name & ".RightToLeft = [System.Windows.Forms.RightToLeft]::Yes" & vbLf
+                    r = r & indent & controlName & ".RightToLeft = " & DotNetTypeLiteral("System.Windows.Forms.RightToLeft", useCls) & "::Yes" & vbLf
                 End If
             End If
             
             If TypeName(ctrl) = "ToggleButton" Then
-                r = r & "$" & ctrl.Name & ".Appearance = [System.Windows.Forms.Appearance]::Button" & vbLf
-                r = r & "$" & ctrl.Name & ".FlatStyle = [System.Windows.Forms.FlatStyle]::Flat" & vbLf
+                r = r & indent & controlName & ".Appearance = " & DotNetTypeLiteral("System.Windows.Forms.Appearance", useCls) & "::Button" & vbLf
+                r = r & indent & controlName & ".FlatStyle = " & DotNetTypeLiteral("System.Windows.Forms.FlatStyle", useCls) & "::Flat" & vbLf
+            End If
+            
+            If TypeName(ctrl) = "CommandButton" Then
+                r = r & indent & controlName & ".FlatStyle = " & DotNetTypeLiteral("System.Windows.Forms.FlatStyle", useCls) & "::Popup" & vbLf
             End If
             
             If TypeName(ctrl) = "TextBox" Then
-                r = r & "$" & ctrl.Name & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
-                r = r & "$" & ctrl.Name & ".Multiline = " & "$" & LCase(CBool(ctrl.Multiline)) & vbLf
+                r = r & indent & controlName & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
+                r = r & indent & controlName & ".Multiline = " & "$" & LCase(CBool(ctrl.Multiline)) & vbLf
             End If
             
             If TypeName(ctrl) = "ComboBox" Then
-                r = r & "$" & ctrl.Name & "_items_value = " & GetListBoxValue(ctrl) & vbLf
-                r = r & "$" & ctrl.Name & ".Items.AddRange($" & ctrl.Name & "_items_value" & ")" & vbLf
-                r = r & "$" & ctrl.Name & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
+                r = r & indent & itemsListName & " = " & GetListBoxValue(ctrl, indent) & vbLf
+                r = r & indent & controlName & ".Items.AddRange(" & itemsListName & ")" & vbLf
+                r = r & indent & controlName & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
             End If
             
             If TypeName(ctrl) = "ListBox" Then
-                r = r & "$" & ctrl.Name & "_items_value = " & GetListBoxValue(ctrl) & vbLf
-                r = r & "$" & ctrl.Name & ".Items.AddRange($" & ctrl.Name & "_items_value" & ")" & vbLf
+                r = r & indent & itemsListName & " = " & GetListBoxValue(ctrl, indent) & vbLf
+                r = r & indent & controlName & ".Items.AddRange(" & itemsListName & ")" & vbLf
             End If
             
             If TypeName(ctrl) = "ScrollBar" Then
-                r = r & "$" & ctrl.Name & ".Minimum = " & ctrl.Min & vbLf
-                r = r & "$" & ctrl.Name & ".Maximum = " & ctrl.Max & vbLf
+                r = r & indent & controlName & ".Minimum = " & ctrl.Min & vbLf
+                r = r & indent & controlName & ".Maximum = " & ctrl.Max & vbLf
             End If
             
             ' Set each Caption in MultiPage
             If TypeName(ctrl) = "MultiPage" Then
                 For Each item In ctrl.Pages
+                    childName = GetControlName(item, prefix, useCls)
                     caption = item.caption
                     caption = Convert2PowerShellFormatText(caption)
-                    r = r & "$" & item.Name & " = New-Object System.Windows.Forms.TabPage" & vbLf
-                    r = r & "$" & ctrl.Name & ".Controls.Add($" & item.Name & ")" & vbLf
-                    r = r & "$" & item.Name & ".Text = " & q & caption & q & vbLf
+                    r = r & indent & childName & " = New-Object System.Windows.Forms.TabPage" & vbLf
+                    r = r & indent & controlName & ".Controls.Add(" & childName & ")" & vbLf
+                    r = r & indent & childName & ".Text = " & q & caption & q & vbLf
                 Next
             End If
             
@@ -238,66 +348,127 @@ Function VBAForm2PSWinForms(ByVal root As Object) As String
                 fontStyle = ""
                 'fontOpts = ""
                 
-                If ctrl.Font.Bold Then fontStyle = fontStyle & "[System.Drawing.FontStyle]::Bold"
+                If ctrl.Font.Bold Then fontStyle = fontStyle & DotNetTypeLiteral("System.Drawing.FontStyle", useCls) & "::Bold"
                 If ctrl.Font.Italic Then
                     If fontStyle <> "" Then fontStyle = fontStyle & " -bor "
-                    fontStyle = fontStyle & "[System.Drawing.FontStyle]::Italic"
+                    fontStyle = fontStyle & DotNetTypeLiteral("System.Drawing.FontStyle", useCls) & "::Italic"
                 End If
                 If ctrl.Font.Underline Then
                     If fontStyle <> "" Then fontStyle = fontStyle & " -bor "
-                    fontStyle = fontStyle & "[System.Drawing.FontStyle]::Underline"
+                    fontStyle = fontStyle & DotNetTypeLiteral("System.Drawing.FontStyle", useCls) & "::Underline"
                 End If
                 If ctrl.Font.Strikethrough Then
                     If fontStyle <> "" Then fontStyle = fontStyle & " -bor "
-                    fontStyle = fontStyle & "[System.Drawing.FontStyle]::Strikeout"
+                    fontStyle = fontStyle & DotNetTypeLiteral("System.Drawing.FontStyle", useCls) & "::Strikeout"
                 End If
                 
                 If fontStyle <> "" Then fontStyle = ", (" & fontStyle & ")"
                 
-                r = r & "$" & ctrl.Name & ".Font = New-Object System.Drawing.Font(" & q & ctrl.Font.Name & q & ", " & Round(ctrl.Font.Size) & fontStyle & ")" & vbLf
+                r = r & indent & controlName & ".Font = New-Object System.Drawing.Font(" & q & ctrl.Font.Name & q & ", " & Round(ctrl.Font.Size) & fontStyle & ")" & vbLf
             End If
             
             
             If GetWinFormsControlName(ctrl) <> "GroupBox" And ContainsValue(Array("Frame", "TextBox", "Label", "ListBox", "Image"), TypeName(ctrl)) Then
                 ' WinForms' Combobox does not support customizing border style
-                r = r & GetBorderSetting(ctrl) & vbLf
+                r = r & indent & controlName & GetBorderSetting(ctrl, useCls) & vbLf
             End If
             
             If ContainsValue(Array("Label", "TextBox", "CheckBox", "ToggleButton", "OptionButton"), TypeName(ctrl)) Then
-                r = r & GetTextAlignSetting(ctrl) & vbLf
+                r = r & indent & controlName & GetTextAlignSetting(ctrl, useCls) & vbLf
             End If
             
             ' Set mouse cursor
             If TypeName(ctrl) <> "MultiPage" Then
                 cursorType = GetControlCursorType(ctrl)
                 If cursorType <> "" Then
-                    r = r & "$" & ctrl.Name & ".Cursor = " & "[System.Windows.Forms.Cursors]::" & cursorType & vbLf
+                    r = r & indent & controlName & ".Cursor = " & DotNetTypeLiteral("System.Windows.Forms.Cursors", useCls) & "::" & cursorType & vbLf
                 Else
-                    r = r & "$" & ctrl.Name & ".Cursor = $null" & vbLf
+                    r = r & indent & controlName & ".Cursor = $null" & vbLf
                 End If
             End If
             
             If TypeName(ctrl) = "Image" Then
-                r = r & "#" & "$" & ctrl.Name & ".Image = [System.Drawing.Image]::FromFile(" & q & "C:\path\to\your\image.png" & q & ")" & vbLf
-                r = r & "#" & "$" & ctrl.Name & ".SizeMode = [System.Windows.Forms.PictureBoxSizeMode]::Normal" & vbLf
+                r = r & indent & "#" & controlName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile(" & q & "C:\path\to\your\image.png" & q & ")" & vbLf
+                r = r & indent & "#" & controlName & ".SizeMode = " & DotNetTypeLiteral("System.Windows.Forms.PictureBoxSizeMode", useCls) & "::Normal" & vbLf
             End If
             
             r = r & vbLf
-            
-        Else
-            MsgBox GenerateUnsupportedControlMessage(ctrl)
-            r = ""
-            VBAForm2PSWinForms = r
-            Exit Function
+                
+        Next ctrl
+        r = r & SetWinFormsButtonValues(ctrls, indent, prefix, useCls) & vbLf
+        If Not useCls And Not noMainLoop Then
+            r = r & formName & ".ShowDialog() | Out-Null"
         End If
-    Next ctrl
-    r = r & SetWinFormsButtonValues(ctrls) & vbLf
-    r = r & "[System.Windows.Forms.Application]::EnableVisualStyles()" & vbLf
-    r = r & "[System.Windows.Forms.Application]::Run($" & root.Name & ")"
+        
+        If useCls Then
+            r = r & indent & "}" & vbLf
+        End If
+        
+        If useCls Then
+            r = r & "}" & vbLf & vbLf
+        End If
+        
+    Next root
+    
+    If useCls And Not noMainLoop Then
+        clsNumber = 0
+        For Each root In frms
+            clsNumber = clsNumber + 1
+            instanceName = "$obj_" & root.Name
+            If clsNumber <= 1 Then
+                r = r & instanceName & " = [" & root.Name & "]::new()" & vbLf
+                toplevelInstanceName = instanceName
+            Else
+                r = r & instanceName & " = [" & root.Name & "]::new()" & vbLf
+            End If
+            r = r & instanceName & "." & FORM_WINDOW_NAME & ".ShowDialog() | Out-Null" & vbLf
+        Next
+    End If
+    
     VBAForm2PSWinForms = r
 End Function
 
-Private Function GetBorderSetting(ByVal ctrl As Object) As String
+Private Function GetParentName(ByVal ctrl As Object, ByVal prefix As String, ByVal useCls As Boolean) As String
+    Dim parentName As String
+    ' If the object name and type name of a control match, it is considered a UserForm.
+    If ctrl.Parent.Name = TypeName(ctrl.Parent) And useCls Then
+        parentName = prefix & FORM_WINDOW_NAME
+    Else
+        parentName = prefix & ctrl.Parent.Name
+    End If
+    GetParentName = parentName
+End Function
+
+Private Function GetControlName(ByVal ctrl As Object, ByVal prefix As String, ByVal useCls As Boolean) As String
+    Dim controlName As String
+    ' If the object name and type name of a control match, it is considered a UserForm.
+    If ctrl.Name = TypeName(ctrl) And useCls Then
+        controlName = prefix & FORM_WINDOW_NAME
+    Else
+        controlName = prefix & ctrl.Name
+    End If
+    GetControlName = controlName
+End Function
+
+Private Function DotNetTypeLiteral(ByVal dotNetTypeName As String, ByVal useCls As Boolean) As String
+    ' Referencing a .NET assembly type such as [System.Windows.Forms.Cursors]
+    ' inside a class definition causes an error.
+    ' This happens because PowerShell classes are compiled before runtime code
+    ' (e.g., Add-Type) is executed.
+    ' Instead, use ("System.Windows.Forms.Cursors" -as [type]).
+    
+    ' "System.Windows.Forms.Cursors", useCls:=True -> ("System.Windows.Forms.Cursors" -as [type])
+    ' "System.Windows.Forms.Cursors", useCls:=False -> [System.Windows.Forms.Cursors]
+    Dim result As String
+    If useCls Then
+        result = "(" & """" & dotNetTypeName & """" & " -as [type])"
+    Else
+        result = "[" & dotNetTypeName & "]"
+    End If
+    DotNetTypeLiteral = result
+End Function
+
+Private Function GetBorderSetting(ByVal ctrl As Object, ByVal useCls As Boolean) As String
     Dim r As String
     Const q As String = """"
     Dim borderSetting As String
@@ -322,11 +493,11 @@ Private Function GetBorderSetting(ByVal ctrl As Object) As String
             End Select
     End Select
 
-    r = "$" & ctrl.Name & ".BorderStyle = " & "[System.Windows.Forms.BorderStyle]::" & borderSetting
+    r = ".BorderStyle = " & DotNetTypeLiteral("System.Windows.Forms.BorderStyle", useCls) & "::" & borderSetting
     GetBorderSetting = r
 End Function
 
-Private Function GetTextAlignSetting(ByVal ctrl As Object) As String
+Private Function GetTextAlignSetting(ByVal ctrl As Object, ByVal useCls As Boolean) As String
    Dim r As String
    Const q As String = """"
    Dim position As String
@@ -346,10 +517,10 @@ Private Function GetTextAlignSetting(ByVal ctrl As Object) As String
     If TypeName(ctrl) = "TextBox" Then
         position = q & position & q
     Else
-        position = "[System.Drawing.ContentAlignment]::Top" & position
+        position = DotNetTypeLiteral("System.Drawing.ContentAlignment", useCls) & "::Top" & position
     End If
     
-    r = r & "$" & ctrl.Name & ".TextAlign = " & position
+    r = r & ".TextAlign = " & position
     GetTextAlignSetting = r
 End Function
 
@@ -444,43 +615,49 @@ Private Function GetControlCursorType(ByVal ctrl As Object) As String
 End Function
 
 
-Private Function SetWinFormsButtonValues(ByVal ctrls As Variant) As String
+Private Function SetWinFormsButtonValues(ByVal ctrls As Variant, ByVal indent As String, ByVal prefix As String, ByVal useCls As Boolean) As String
     Dim ctrl As Variant
+    Dim controlName As String
     Dim value As Boolean
     Dim r As String
     r = ""
     For Each ctrl In ctrls
+        controlName = GetControlName(ctrl, prefix, useCls)
         If ContainsValue(Array("OptionButton", "CheckBox", "ToggleButton"), TypeName(ctrl)) Then
-            r = r & "$" & ctrl.Name & ".Checked = " & "$" & LCase(CBool(ctrl.value)) & vbLf
+            r = r & indent & controlName & ".Checked = " & "$" & LCase(CBool(ctrl.value)) & vbLf
         End If
     Next
     SetWinFormsButtonValues = r
 End Function
 
-Private Function GetListBoxValue(ByVal ctrl As Object) As String
+Private Function GetListBoxValue(ByVal ctrl As Object, ByVal indent As String) As String
     ' Retrieve the items of a ListBox or ComboBox as a string in the format @("1", "2", "3").
     Const q As String = """"
     Dim item As Variant
     Dim i As Long: i = 0
     Dim r As String
-    Const indent As String = "    "
+    Dim listIndent As String: listIndent = "    " & indent
     Const maxItemsPerLine As Long = 3
     r = ""
     If ctrl.ListCount > 0 Then
-        If ctrl.ListCount > maxItemsPerLine Then r = r & vbLf & indent
+        If ctrl.ListCount > maxItemsPerLine Then r = r & vbLf & listIndent
         For Each item In ctrl.List
             i = i + 1
             r = r & q & Convert2PowerShellFormatText(item) & q
             If Not i = ctrl.ListCount Then
                 r = r & ", "
-                If i Mod maxItemsPerLine = 0 And ctrl.ListCount > maxItemsPerLine Then r = r & vbLf & indent
+                If i Mod maxItemsPerLine = 0 And ctrl.ListCount > maxItemsPerLine Then r = r & vbLf & listIndent
             Else
                 If ctrl.ListCount > maxItemsPerLine Then r = r & vbLf
                 Exit For
             End If
         Next item
     End If
-    r = "@(" & r & ")"
+    If ctrl.ListCount > maxItemsPerLine Then
+        r = "@(" & r & indent & ")"
+    Else
+        r = "@(" & r & ")"
+    End If
     GetListBoxValue = r
 End Function
 
@@ -853,6 +1030,11 @@ Private Function GenerateUnsupportedControlMessage(ByVal ctrl As Object) As Stri
     GenerateUnsupportedControlMessage = "Control type " & q & TypeName(ctrl) & q & " is not supported."
 End Function
 
+Private Function GenerateUnavailableNameMessage(ByVal ctrl As Object) As String
+    Const q As String = """"
+    GenerateUnavailableNameMessage = "Object Name " & q & ctrl.Name & q & "is not available." & vbLf & "Please use a different name instead."
+End Function
+
 Private Function GetFormControlDepth(ByVal ctrl As Object) As Long
     ' Get the hierarchy depth of the control
     Dim depth As Long
@@ -1117,4 +1299,5 @@ Private Function ReverseCollection(ByVal srcColl As Collection) As Collection
     End If
     Set ReverseCollection = resultColl
 End Function
+
 

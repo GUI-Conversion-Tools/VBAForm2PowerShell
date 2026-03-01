@@ -20,37 +20,37 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 - Variable names (object names)
 - Approximate layout and size of controls
 - Control colors (foreground, background)
-- Text display (Label, CommandButton, CheckBox, ToggleButton, OptionButton, MultiPage)
+- Text display (`Label`, `CommandButton`, `CheckBox`, `ToggleButton`, `OptionButton`, `MultiPage`)
 - Font (typeface, size, bold, italic)
-- Borders (Frame [without Caption], TextBox, Label, ListBox, Image)
+- Borders (`Frame [without Caption]`, `TextBox`, `Label`, `ListBox`, `Image`)
 - Mouse cursor
-- Text alignment: left, center, right (Label, TextBox, CheckBox, ToggleButton, OptionButton)
-- Default values of TextBox, ComboBox
-- Items set in ComboBox, ListBox
-- Selection state of OptionButton, CheckBox and ToggleButton
-- Transparent background setting specified in BackStyle
+- Text alignment: left, center, right (`Label`, `TextBox`, `CheckBox`, `ToggleButton`, `OptionButton`)
+- Default values of `TextBox`, `ComboBox`
+- Items set in `ComboBox`, `ListBox`
+- Selection state of `OptionButton`, `CheckBox` and `ToggleButton`
+- Transparent background setting specified in `.BackStyle`
 
 ## Supported Controls
 | VBA Form Class | WinForms Class|
 | ------ | ------ |
-| Label | Label |
-| CommandButton | Button |
-| Frame (without Caption) | Panel |
-| Frame (with any Caption) | GroupBox |
-| TextBox | TextBox |
-| SpinButton | NumericUpDown |
-| ListBox | ListBox |
-| CheckBox | CheckBox |
-| ToggleButton | CheckBox<br>(Appearance = [System.Windows.Forms.Appearance]::Button) |
-| OptionButton | RadioButton |
-| Image | PictureBox |
-| ScrollBar | HScrollBar / VScrollBar |
-| ComboBox | ComboBox |
-| MultiPage | TabControl |
+| `Label` | `Label` |
+| `CommandButton` | `Button` |
+| `Frame` (without Caption) | `Panel` |
+| `Frame` (with any Caption) | `GroupBox` |
+| `TextBox` | `TextBox` |
+| `SpinButton` | `NumericUpDown` |
+| `ListBox` | `ListBox` |
+| `CheckBox` | `CheckBox` |
+| `ToggleButton` | `CheckBox`<br>(`Appearance = [System.Windows.Forms.Appearance]::Button`) |
+| `OptionButton` | `RadioButton` |
+| `Image` | `PictureBox` |
+| `ScrollBar` | `HScrollBar` / `VScrollBar` |
+| `ComboBox` | `ComboBox` |
+| `MultiPage` | `TabControl` |
 
 
 > Note:
-SpinButton behaves differently in VBA and WinForms, so appearance may vary depending on placement.<br>
+`SpinButton` behaves differently in VBA and WinForms, so appearance may vary depending on placement.<br>
 If unsupported controls exist on the form, the conversion will fail. If that case, please remove those controls and run the conversion again.<br>
 
 
@@ -59,32 +59,55 @@ If unsupported controls exist on the form, the conversion will fail. If that cas
 Before using, prepare the Excel workbook containing the user form you want to convert.
 Also, ensure that the Immediate Window is visible in the VBE (Visual Basic Editor).<br><br>
 <img width="807" height="768" alt="Image" src="https://github.com/user-attachments/assets/b023597f-6f9e-4223-a9a4-1c7c499c194b" /><br><br>
-1. Download the latest file from [here](https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell/releases) and extract it. Use the VBAForm2PowerShell.bas file inside.<br>
+1. Download the latest file from [here](https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell/releases) and extract it. Use the `VBAForm2PowerShell.bas` file inside.<br>
 2. In Excel, go to Developer -> Visual Basic to open VBE.<br>
-3. Right-click your project and import the provided .bas file using Import File.<br>
-4. In the Immediate Window, enter: Call ConvertForm2PS(UserForm1)<br>
+3. Right-click your project and import the provided `.bas` file using Import File.<br>
+4. In the Immediate Window, enter: `Call ConvertForm2PS(UserForm1)`<br>
 ```vb
 Call ConvertForm2PS(UserForm1)
 ```
-If you want to save it as a .bat file that can be executed by double-clicking, set the second argument to True.<br>
+If you want to save it as a `.bat` file that can be executed by double-clicking, set the second argument to `True`.<br>
 ```vb
 Call ConvertForm2PS(UserForm1, True)
 ```
    > Note: Replace UserForm1 with the object name of the form you want to convert.
 
-5.  If conversion succeeds, a message will appear, and an output.ps1/output.bat file will be created in the same directory as your Excel workbook.<br>
-6.  After checking the GUI appearance, edit the .ps1/.bat file and, above [System.Windows.Forms.Application]::EnableVisualStyles(), configure event handlers for controls (e.g., Button.Add_Click({ FunctionName })).<br>
+5.  If conversion succeeds, a message will appear, and an `output.ps1`/`output.bat` file will be created in the same directory as your Excel workbook.<br>
+6.  After checking the GUI appearance, edit the `.ps1`/`.bat` file and, above `.ShowDialog()`, configure event handlers for controls (e.g., `Button.Add_Click({ FunctionName })`).<br>
 
+## Parameters
+
+`ConvertForm2PS` accepts the following parameters:
+
+|**Parameter**|**Type**|**Description**                         |
+|----------------|-------------------------------|-----------------------------|
+|`frms` |`Variant`|**Required.**<br>Accepts a single `UserForm` object or an `Array` of `UserForm` objects to be converted.            |
+|`saveAsBat` |`Boolean`|**Optional (Default: `False`).**<br>If set to `True`, the generated PowerShell script will be saved as a `.bat` file that can be executed by double-clicking.|
+|`useCls`  |`Boolean` |**Optional (Default: `False`).**<br>If set to `True`, the generated PowerShell code will wrap each form in a PowerShell class structure. This is automatically set to `True` if `frms` is an array.|
+|`noMainLoop`  |`Boolean`|**Optional (Default: `False`).**<br>If set to `True`, the `.ShowDialog()` call will be omitted from the end of the generated PowerShell script.|
+
+You can execute the conversion by calling the `ConvertForm2PS` with a single UserForm object or an array of multiple UserForms.
+
+```vb
+' Example: Converting a single form
+Call ConvertForm2PS(UserForm1)
+
+' Example: Converting a single form (Class-based style)
+Call ConvertForm2PS(UserForm1, useCls:=True)
+
+' Example: Converting multiple forms (Automatically uses Class-based style)
+Call ConvertForm2PS(Array(UserForm1, UserForm2))
+```
 
 ## Control Order (for Controls Without Child Elements)
-In WinForms, if you place one Label on top of another, the earlier control appears in front.<br>
+In WinForms, if you place one `Label` on top of another, the earlier control appears in front.<br>
 However, in VBA, you can change front/back order, so the behavior differs.<br>
 The program first reverses controls order and sorts controls by hierarchy level.<br>
 Since VBA’s z-order (front/back) cannot currently be retrieved, some displays may not match VBA.<br>
 
 To adjust:<br>
-&nbsp;&nbsp;&nbsp;&nbsp;Edit the PowerShell code to use .BringToFront() or .SendToBack() to adjust the z-order.<br>
-&nbsp;&nbsp;&nbsp;&nbsp;For new GUIs, instead of overlapping controls, it is recommended to use containers like Frame, which allow clear parent-child relationships.
+&nbsp;&nbsp;&nbsp;&nbsp;Edit the PowerShell code to use `.BringToFront()` or `.SendToBack()` to adjust the z-order.<br>
+&nbsp;&nbsp;&nbsp;&nbsp;For new GUIs, instead of overlapping controls, it is recommended to use containers like `Frame`, which allow clear parent-child relationships.
 
 ## Notes on Usage
 When using this program in a multi-monitor environment, please temporarily switch to a single monitor or ensure that all monitors have the same scaling percentage.
