@@ -3,8 +3,8 @@
 このプログラムは、Excel VBAにて作成したユーザーフォームをPowerShellのGUI(WinForms)用に変換可能なプログラムです<br>
 
 ## 変換例
-<img width="681" height="1275" alt="Image" src="https://github.com/user-attachments/assets/fd6d6445-9dd1-448e-8358-e74f91f571cd" /><br>
-<img width="704" height="695" alt="Image" src="https://github.com/user-attachments/assets/46e6fa34-236e-499a-a4fe-a1be7b0e6acc" /><br><br>
+<img width="681" height="1275" alt="Image" src="https://github.com/user-attachments/assets/6762d0bb-16f5-4555-8700-95e3c4db19d5" /><br>
+<img width="704" height="695" alt="Image" src="https://github.com/user-attachments/assets/98cb0e04-e541-447d-9ff6-18469dcfe49f" /><br><br>
 
 ## 動作要件
 - 対応OS: Windows
