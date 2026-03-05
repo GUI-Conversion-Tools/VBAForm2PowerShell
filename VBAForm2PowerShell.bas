@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.1.0
+' VBAForm2PowerShell v1.1.1
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025-2026 ZeeZeX
 ' This software is released under the MIT License.
@@ -60,7 +60,7 @@ Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boolean = 
     Dim code As String
     Dim filePath As String
     Dim saveDir As String
-    code = VBAForm2PSWinForms(frms, useCls, noMainLoop)
+    code = GeneratePSWinFormsCode(frms, useCls, noMainLoop)
     If code <> "" Then
         If ThisWorkbook.Path = "" Then
             saveDir = "C:"
@@ -84,7 +84,7 @@ Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boolean = 
 End Sub
 
 
-Function VBAForm2PSWinForms(ByVal frms As Variant, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False) As String
+Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False) As String
     Dim root As Variant
     Dim indent As String
     Dim prefix As String
@@ -153,7 +153,7 @@ Function VBAForm2PSWinForms(ByVal frms As Variant, Optional ByVal useCls As Bool
         If ContainsValue(unavailableNames, LCase(root.Name)) Then
             MsgBox GenerateUnavailableNameMessage(root)
             r = ""
-            VBAForm2PSWinForms = r
+            GeneratePSWinFormsCode = r
             Exit Function
         End If
         unavailableNames(0) = LCase(FORM_WINDOW_NAME)
@@ -229,14 +229,14 @@ Function VBAForm2PSWinForms(ByVal frms As Variant, Optional ByVal useCls As Bool
             If GetWinFormsControlName(ctrl) = "" Then
                 MsgBox GenerateUnsupportedControlMessage(ctrl)
                 r = ""
-                VBAForm2PSWinForms = r
+                GeneratePSWinFormsCode = r
                 Exit Function
             End If
             
             If ContainsValue(unavailableNames, LCase(ctrl.Name)) Then
                 MsgBox GenerateUnavailableNameMessage(ctrl)
                 r = ""
-                VBAForm2PSWinForms = r
+                GeneratePSWinFormsCode = r
                 Exit Function
             End If
             
@@ -425,7 +425,7 @@ Function VBAForm2PSWinForms(ByVal frms As Variant, Optional ByVal useCls As Bool
         Next
     End If
     
-    VBAForm2PSWinForms = r
+    GeneratePSWinFormsCode = r
 End Function
 
 Private Function GetParentName(ByVal ctrl As Object, ByVal prefix As String, ByVal useCls As Boolean) As String
@@ -1032,7 +1032,7 @@ End Function
 
 Private Function GenerateUnavailableNameMessage(ByVal ctrl As Object) As String
     Const q As String = """"
-    GenerateUnavailableNameMessage = "Object Name " & q & ctrl.Name & q & "is not available." & vbLf & "Please use a different name instead."
+    GenerateUnavailableNameMessage = "Object Name " & q & ctrl.Name & q & " is not available." & vbLf & "Please use a different name instead."
 End Function
 
 Private Function GetFormControlDepth(ByVal ctrl As Object) As Long
