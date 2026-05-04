@@ -8,7 +8,7 @@
 
 ## 動作要件
 - 対応OS: Windows
-- 必要ソフトウェア: Microsoft Excel
+- 必要ソフトウェア: Microsoft Excel 2010以降
 
 ## 動作確認済環境
 - Windows 10/11

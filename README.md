@@ -8,7 +8,7 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 
 ## System Requirements
 - Supported OS: Windows
-- Required Software: Microsoft Excel
+- Required Software: Microsoft Excel 2010 or later
 
 ## Verified Operating Environments
 - Windows 10/11
