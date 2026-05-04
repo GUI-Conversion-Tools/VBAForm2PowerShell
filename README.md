@@ -16,6 +16,10 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 - Excel 2016(32bit)
 - Excel 2019(64bit)
 
+## Notes on Usage
+When using this program in a multi-monitor environment, please temporarily switch to a single monitor or ensure that all monitors have the same scaling percentage.
+If monitors with different scaling percentages are mixed, the window size may not be calculated correctly.
+
 ## Converted Elements
 - Variable names (object names)
 - Approximate layout and size of controls
@@ -139,6 +143,3 @@ To adjust:<br>
 &nbsp;&nbsp;&nbsp;&nbsp;Edit the PowerShell code to use `.BringToFront()` or `.SendToBack()` to adjust the z-order.<br>
 &nbsp;&nbsp;&nbsp;&nbsp;For new GUIs, instead of overlapping controls, it is recommended to use containers like `Frame`, which allow clear parent-child relationships.
 
-## Notes on Usage
-When using this program in a multi-monitor environment, please temporarily switch to a single monitor or ensure that all monitors have the same scaling percentage.
-If monitors with different scaling percentages are mixed, the window size may not be calculated correctly.
