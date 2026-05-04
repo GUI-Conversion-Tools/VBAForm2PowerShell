@@ -30,6 +30,7 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 - Items set in `ComboBox`, `ListBox`
 - Selection state of `OptionButton`, `CheckBox` and `ToggleButton`
 - Transparent background setting specified in `.BackStyle`(Excluding `ComboBox` [.Style = fmStyleDropDownList])
+- `.Min`/`.Max` property (`ScrollBar`)
 - `.Alignment` property (`CheckBox`. `OptionButton`)
 - `.TabOrientation` property (`MultiPage`)
 - `.Locked` property (`TextBox`, `ListBox`, `ComboBox`)

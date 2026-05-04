@@ -30,6 +30,7 @@
 - `ComboBox`, `ListBox`に設定したアイテム
 - `OptionButton`, `CheckBox`, `ToggleButton`の選択状態
 - `.BackStyle`に設定した透明表示設定 (ただし次のコントロールを除く: `ComboBox` [.Style = fmStyleDropDownList])
+- `.Min`/`.Max`プロパティ (`ScrollBar`)
 - `.Alignment`プロパティ (`CheckBox`. `OptionButton`)
 - `.TabOrientation`プロパティ (`MultiPage`)
 - `.Locked`プロパティ (`TextBox`, `ListBox`, `ComboBox`)
