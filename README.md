@@ -19,7 +19,8 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 ## Converted Elements
 - Variable names (object names)
 - Approximate layout and size of controls
-- Control colors (foreground, background)
+- Control colors (foreground) (Excluding `MultiPage`, `ComboBox` [.Style = fmStyleDropDownList])
+- Control colors (background) (Excluding `MultiPage`, `ComboBox` [.Style = fmStyleDropDownList], `ScrollBar`)
 - Text display (`Label`, `CommandButton`, `CheckBox`, `ToggleButton`, `OptionButton`, `MultiPage`)
 - Font (typeface, size, bold, italic)
 - Borders (`Frame [without Caption]`, `TextBox`, `Label`, `ListBox`, `Image`)
@@ -28,7 +29,35 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 - Default values of `TextBox`, `ComboBox`
 - Items set in `ComboBox`, `ListBox`
 - Selection state of `OptionButton`, `CheckBox` and `ToggleButton`
-- Transparent background setting specified in `.BackStyle`
+- Transparent background setting specified in `.BackStyle`(Excluding `ComboBox` [.Style = fmStyleDropDownList])
+- `.Alignment` property (`CheckBox`. `OptionButton`)
+- `.TabOrientation` property (`MultiPage`)
+- `.Locked` property (`TextBox`, `ListBox`, `ComboBox`)
+- `.PasswordChar` property (`TextBox`)
+- `.Style` property (`ComboBox`, `MultiPage`)
+- `.MultiSelect` property (`ListBox`)
+- `.PictureAlignment`/`.PictureSizeMode` property (`Image`)
+
+>Note:
+>
+>-   When `.BackStyle` is `fmBackStyleOpaque`, the control’s own `.BackColor` is used directly.
+>-   When `.BackStyle` is `fmBackStyleTransparent`:
+>        -   For controls that support transparency in WinForms (e.g., `Label`, `CommandButton`, `CheckBox`, `OptionButton`, `Image`), `.BackColor` is set to `"Transparent"`.
+>        -   For controls that **do not support transparency in WinForms** (`TextBox`, `ComboBox`, `ToggleButton`), the background is substituted:
+>            -   If the parent control has a `.BackColor`, that color is used.
+>            -   If the parent is a `Page` (which does not expose `.BackColor`), a system default color (`&H8000000F&`) is used as a fallback, which matches the visual background color of the `Page`.
+>
+>-   `.PictureSizeMode`/`.PictureAlignment` is mapped to the corresponding WinForms `.SizeMode` behavior:
+>        -   `fmPictureSizeModeClip` → `"Normal"` or `"CenterImage"` (depends on `.PictureAlignment`)
+>        -   `fmPictureSizeModeStretch` → `"StretchImage"`
+>        -   `fmPictureSizeModeZoom` → `"Zoom"`
+>
+>        -   When `.PictureSizeMode = fmPictureSizeModeClip`:
+>            -   `.PictureAlignment = fmPictureAlignmentCenter` → `"CenterImage"`
+>            -   `.PictureAlignment = fmPictureAlignmentTopLeft` → `"Normal"`
+>            -   Other alignment values are not supported in WinForms `PictureBox`, and are converted to `"Normal"` (top-left).
+>        -   For `"StretchImage"` and `"Zoom"` modes, `.PictureAlignment` is ignored.
+>-   MultiPage controls with `.TabOrientation` set to `fmTabOrientationLeft`  or  `fmTabOrientationRight` render tab text vertically in WinForms, unlike VBA, which keeps it horizontal.
 
 ## Supported Controls
 | VBA Form Class | WinForms Class|
@@ -41,7 +70,7 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 | `SpinButton` | `NumericUpDown` |
 | `ListBox` | `ListBox` |
 | `CheckBox` | `CheckBox` |
-| `ToggleButton` | `CheckBox`<br>(`Appearance = [System.Windows.Forms.Appearance]::Button`) |
+| `ToggleButton` | `CheckBox`<br>(`.Appearance = "Button"`) |
 | `OptionButton` | `RadioButton` |
 | `Image` | `PictureBox` |
 | `ScrollBar` | `HScrollBar` / `VScrollBar` |

@@ -19,7 +19,8 @@
 ## 反映する項目
 - 変数名(オブジェクト名)
 - コントロールのおおよそのレイアウトとサイズ
-- コントロールの色(文字色、背景色)
+- コントロールの色(文字色) (ただし次のコントロールを除く: `MultiPage`, `ComboBox` [.Style = fmStyleDropDownList])
+- コントロールの色(背景色) (ただし次のコントロールを除く: `MultiPage`, `ComboBox` [.Style = fmStyleDropDownList], `ScrollBar`)
 - テキスト表示(`Label`, `CommandButton`, `CheckBox`, `ToggleButton`, `OptionButton`, `MultiPage`)
 - フォント(フォント種類、サイズ、太字、斜体)
 - 枠線(`Frame [Captionなし]`, `TextBox`, `Label`, `ListBox`, `Image`)
@@ -28,7 +29,35 @@
 - `TextBox`, `ComboBox`のデフォルト値
 - `ComboBox`, `ListBox`に設定したアイテム
 - `OptionButton`, `CheckBox`, `ToggleButton`の選択状態
-- `.BackStyle`に設定した透明表示設定
+- `.BackStyle`に設定した透明表示設定 (ただし次のコントロールを除く: `ComboBox` [.Style = fmStyleDropDownList])
+- `.Alignment`プロパティ (`CheckBox`. `OptionButton`)
+- `.TabOrientation`プロパティ (`MultiPage`)
+- `.Locked`プロパティ (`TextBox`, `ListBox`, `ComboBox`)
+- `.PasswordChar`プロパティ (`TextBox`)
+- `.Style`プロパティ (`ComboBox`, `MultiPage`)
+- `.MultiSelect`プロパティ (`ListBox`)
+- `.PictureAlignment`/`.PictureSizeMode`プロパティ (`Image`)
+
+>注:
+>
+>-   `.BackStyle`が `fmBackStyleOpaque`の場合VBAのコントロールの`.BackColor`を直接適用します
+>-   `.BackStyle`が `fmBackStyleTransparent`の場合:
+>        -   WinFormsが透明色をサポートしているコントロール(例: `Label`, `CommandButton`, `CheckBox`, `OptionButton`, `Image`)の場合`.BackColor = "Transparent"`に設定します
+>        -   WinFormsが透明色をサポートしていないコントロール(`TextBox`, `ComboBox`, `ToggleButton`)では以下のように変換されます:
+>            -   親コントロールが`.BackColor`プロパティを持つ場合、その色を`.BackColor`に設定します
+>            -   親コントロールが`Page`の場合、`.BackColor`プロパティを持たないため`Page`の視覚的な背景色と一致するシステムカラーの`&H8000000F&`を`.BackColor`に設定します
+>
+>-   `.PictureSizeMode`/`.PictureAlignment`は対応するWinFormsの `.SizeMode`に変換されます:
+>        -   `fmPictureSizeModeClip` → `"Normal"` または `"CenterImage"` (`.PictureAlignment`の設定値により変化)
+>        -   `fmPictureSizeModeStretch` → `"StretchImage"`
+>        -   `fmPictureSizeModeZoom` → `"Zoom"`
+>
+>        -   `.PictureSizeMode = fmPictureSizeModeClip`の場合:
+>            -   `.PictureAlignment = fmPictureAlignmentCenter` → `"CenterImage"`
+>            -   `.PictureAlignment = fmPictureAlignmentTopLeft` → `"Normal"`
+>            -   WinFormsの`PictureBox`は左上と中央配置のみをサポートしているため、他の値は`"Normal"`(左上)に変換されます
+>        -   `.PictureSizeMode`が`fmPictureSizeModeStretch`または`fmPictureSizeModeZoom`の場合`.PictureAlignment`は無視されます
+>-   MultiPageコントロールの`.TabOrientation`が`fmTabOrientationLeft`または`fmTabOrientationRight`になっている場合タブのテキストが縦方向になり、横方向を維持するVBAとは見た目が異なります
 
 ## 対応しているコントロールの種類
 | VBA Formのクラス | WinFormsのクラス|
@@ -41,7 +70,7 @@
 | `SpinButton` | `NumericUpDown` |
 | `ListBox` | `ListBox` |
 | `CheckBox` | `CheckBox` |
-| `ToggleButton` | `CheckBox`<br>(`Appearance = [System.Windows.Forms.Appearance]::Button`) |
+| `ToggleButton` | `CheckBox`<br>(`.Appearance = "Button"`) |
 | `OptionButton` | `RadioButton` |
 | `Image` | `PictureBox` |
 | `ScrollBar` | `HScrollBar` / `VScrollBar` |
