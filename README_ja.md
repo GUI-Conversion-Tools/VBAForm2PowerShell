@@ -42,7 +42,7 @@
 >
 >-   `.BackStyle`が `fmBackStyleOpaque`の場合VBAのコントロールの`.BackColor`を直接適用します
 >-   `.BackStyle`が `fmBackStyleTransparent`の場合:
->        -   WinFormsが透明色をサポートしているコントロール(例: `Label`, `CommandButton`, `CheckBox`, `OptionButton`, `Image`)の場合`.BackColor = "Transparent"`に設定します
+>        -   WinFormsが透明色をサポートしているコントロール(例: `Label`, `CommandButton`, `CheckBox`, `OptionButton`, `Image`など)の場合`.BackColor = "Transparent"`に設定します
 >        -   WinFormsが透明色をサポートしていないコントロール(`TextBox`, `ComboBox`, `ToggleButton`)では以下のように変換されます:
 >            -   親コントロールが`.BackColor`プロパティを持つ場合、その色を`.BackColor`に設定します
 >            -   親コントロールが`Page`の場合、`.BackColor`プロパティを持たないため`Page`の視覚的な背景色と一致するシステムカラーの`&H8000000F&`を`.BackColor`に設定します
@@ -108,7 +108,7 @@ Call ConvertForm2PS(UserForm1, True)
 |`frms` |`Variant`|**必須**<br>変換対象の`UserForm`オブジェクトまたは`UserForm`オブジェクトの配列を指定 |
 |`saveAsBat` |`Boolean`|**省略可能 (デフォルト: `False`).**<br>`True`にした場合PowerShellスクリプトをダブルクリックで起動可能な`.bat`ファイルとして保存する|
 |`useCls`  |`Boolean` |**省略可能 (デフォルト: `False`).**<br>`True`にした場合生成したPowerShellコードにおいて各フォームをクラス化する&nbsp;&nbsp;`frms`が配列の場合は自動的に`True`に設定される|
-|`noMainLoop`  |`Boolean`|**省略可能 (デフォルト: `False`).**<br>`True`にした場合生成したPowerShellスクリプトに`.ShowDialog()`を含めなくする|
+|`noMainLoop`  |`Boolean`|**省略可能 (デフォルト: `False`).**<br>`True`にした場合生成したPowerShellスクリプトに`.ShowDialog()`を含めなくする &nbsp;&nbsp;`useCls`が`True`の場合はインスタンスの作成(例:`$obj_UserForm1 = [UserForm1]::new()`)もスキップする|
 
 `ConvertForm2PS`は単一のユーザーフォームまたは配列内の複数のユーザーフォームを変換することが可能です
 

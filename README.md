@@ -42,7 +42,7 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 >
 >-   When `.BackStyle` is `fmBackStyleOpaque`, the control’s own `.BackColor` is used directly.
 >-   When `.BackStyle` is `fmBackStyleTransparent`:
->        -   For controls that support transparency in WinForms (e.g., `Label`, `CommandButton`, `CheckBox`, `OptionButton`, `Image`), `.BackColor` is set to `"Transparent"`.
+>        -   For controls that support transparency in WinForms (e.g., `Label`, `CommandButton`, `CheckBox`, `OptionButton`, `Image`, etc), `.BackColor` is set to `"Transparent"`.
 >        -   For controls that **do not support transparency in WinForms** (`TextBox`, `ComboBox`, `ToggleButton`), the background is substituted:
 >            -   If the parent control has a `.BackColor`, that color is used.
 >            -   If the parent is a `Page` (which does not expose `.BackColor`), a system default color (`&H8000000F&`) is used as a fallback, which matches the visual background color of the `Page`.
@@ -113,7 +113,7 @@ Call ConvertForm2PS(UserForm1, True)
 |`frms` |`Variant`|**Required.**<br>Accepts a single `UserForm` object or an `Array` of `UserForm` objects to be converted.            |
 |`saveAsBat` |`Boolean`|**Optional (Default: `False`).**<br>If set to `True`, the generated PowerShell script will be saved as a `.bat` file that can be executed by double-clicking.|
 |`useCls`  |`Boolean` |**Optional (Default: `False`).**<br>If set to `True`, the generated PowerShell code will wrap each form in a PowerShell class structure. This is automatically set to `True` if `frms` is an array.|
-|`noMainLoop`  |`Boolean`|**Optional (Default: `False`).**<br>If set to `True`, the `.ShowDialog()` call will be omitted from the end of the generated PowerShell script.|
+|`noMainLoop`  |`Boolean`|**Optional (Default: `False`).**<br>If set to `True`, the `.ShowDialog()` call will be omitted from the end of the generated PowerShell script. When `useCls` is also `True`, this will additionally skip the code that creates the object instances (e.g., `$obj_UserForm1 = [UserForm1]::new()`).|
 
 You can execute the conversion by calling the `ConvertForm2PS` with a single UserForm object or an array of multiple UserForms.
 
