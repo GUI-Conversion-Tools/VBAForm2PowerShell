@@ -8,17 +8,15 @@
 
 ## 動作要件
 - 対応OS: Windows
-- 必要ソフトウェア: Microsoft Excel 2010以降
+- 必要ソフトウェア: Microsoft Excel 2000以降
+- 推奨環境: Microsoft Excel 2016以降
 
 ## 動作確認済環境
+- Windows XP(SP3) 
 - Windows 10/11
 - Excel 2010(32bit)
 - Excel 2016(32bit)
 - Excel 2019(64bit)
-
-## 使用のさいの注意点
-マルチモニター環境でこのプログラムを使用する場合、一時的にモニターを1つにするか、すべてのモニターの拡大率を統一したうえで使用してください<br>
-異なる拡大率のモニターが混在している場合、ウィンドウサイズの計算が正常に行えない可能性があります<br>
 
 ## 反映する項目
 - 変数名(オブジェクト名)
@@ -29,9 +27,9 @@
 - フォント(フォント種類、サイズ、太字、斜体)
 - 枠線(`Frame [Captionなし]`, `TextBox`, `Label`, `ListBox`, `Image`)
 - マウスカーソル
-- テキスト表示の左寄せ・中央・右寄せ(`Label`, `TextBox`, `CheckBox`, `ToggleButton`, `OptionButton`)
+- テキスト表示の左寄せ・中央・右寄せ(`Label`, `TextBox`, `CheckBox`, `ToggleButton`, `OptionButton`, `ListView`)
 - `TextBox`, `ComboBox`のデフォルト値
-- `ComboBox`, `ListBox`に設定したアイテム
+- `ComboBox`, `ListBox`, `ListView`, `TreeView`に設定したアイテム
 - `OptionButton`, `CheckBox`, `ToggleButton`の選択状態
 - `.BackStyle`に設定した透明表示設定 (ただし次のコントロールを除く: `ComboBox` [.Style = fmStyleDropDownList])
 - `.Orientation`/`.Min`/`.Max`プロパティ (`ScrollBar`)
@@ -39,9 +37,13 @@
 - `.TabOrientation`プロパティ (`MultiPage`)
 - `.Locked`プロパティ (`TextBox`, `ListBox`, `ComboBox`)
 - `.PasswordChar`プロパティ (`TextBox`)
+- `.ScrollBars` プロパティ (`TextBox`)
+- `.WordWrap` プロパティ (`TextBox`)
 - `.Style`プロパティ (`ComboBox`, `MultiPage`)
-- `.MultiSelect`プロパティ (`ListBox`)
+- `.MultiSelect`プロパティ (`ListBox`, `ListView`)
 - `.PictureAlignment`/`.PictureSizeMode`プロパティ (`Image`)
+- `.Scroll` プロパティ (`TreeView`)
+- `.Expanded` プロパティ (`TreeView.Nodes`)
 
 >注:
 >
@@ -81,6 +83,8 @@
 | `ScrollBar` | `HScrollBar` / `VScrollBar` |
 | `ComboBox` | `ComboBox` |
 | `MultiPage` | `TabControl` |
+| `ListView`(`.View=lvwReport`) | `ListView` |
+| `TreeView` | `TreeView` |
 
 ※`SpinButton`は仕様が異なるため、配置方法によっては外観が異なります<br>
 上記以外のコントロールがフォーム上にある場合、変換に失敗するので該当のコントロールを削除したうえで再度変換を行ってください<br>

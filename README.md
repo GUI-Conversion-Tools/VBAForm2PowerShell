@@ -8,17 +8,16 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 
 ## System Requirements
 - Supported OS: Windows
-- Required Software: Microsoft Excel 2010 or later
+- Required Software: Microsoft Excel 2000 or later
+- Recommended Environment: Microsoft Excel 2016 or later
 
 ## Verified Operating Environments
+- Windows XP(SP3)
 - Windows 10/11
+- Excel 2000(32bit)
 - Excel 2010(32bit)
 - Excel 2016(32bit)
 - Excel 2019(64bit)
-
-## Notes on Usage
-When using this program in a multi-monitor environment, please temporarily switch to a single monitor or ensure that all monitors have the same scaling percentage.
-If monitors with different scaling percentages are mixed, the window size may not be calculated correctly.
 
 ## Converted Elements
 - Variable names (object names)
@@ -29,9 +28,9 @@ If monitors with different scaling percentages are mixed, the window size may no
 - Font (typeface, size, bold, italic)
 - Borders (`Frame [without Caption]`, `TextBox`, `Label`, `ListBox`, `Image`)
 - Mouse cursor
-- Text alignment: left, center, right (`Label`, `TextBox`, `CheckBox`, `ToggleButton`, `OptionButton`)
+- Text alignment: left, center, right (`Label`, `TextBox`, `CheckBox`, `ToggleButton`, `OptionButton`,  `ListView`)
 - Default values of `TextBox`, `ComboBox`
-- Items set in `ComboBox`, `ListBox`
+- Items set in `ComboBox`, `ListBox`, `ListView`, `TreeView`
 - Selection state of `OptionButton`, `CheckBox` and `ToggleButton`
 - Transparent background setting specified in `.BackStyle`(Excluding `ComboBox` [.Style = fmStyleDropDownList])
 - `.Orientation`/`.Min`/`.Max` property (`ScrollBar`)
@@ -39,9 +38,13 @@ If monitors with different scaling percentages are mixed, the window size may no
 - `.TabOrientation` property (`MultiPage`)
 - `.Locked` property (`TextBox`, `ListBox`, `ComboBox`)
 - `.PasswordChar` property (`TextBox`)
+- `.ScrollBars` property (`TextBox`)
+- `.WordWrap` property (`TextBox`)
 - `.Style` property (`ComboBox`, `MultiPage`)
-- `.MultiSelect` property (`ListBox`)
+- `.MultiSelect` property (`ListBox`, `ListView`)
 - `.PictureAlignment`/`.PictureSizeMode` property (`Image`)
+- `.Scroll` property (`TreeView`)
+- `.Expanded` property (`TreeView.Nodes`)
 
 >Note:
 >
@@ -81,7 +84,8 @@ If monitors with different scaling percentages are mixed, the window size may no
 | `ScrollBar` | `HScrollBar` / `VScrollBar` |
 | `ComboBox` | `ComboBox` |
 | `MultiPage` | `TabControl` |
-
+| `ListView`(`.View=lvwReport`) | `ListView` |
+| `TreeView` | `TreeView` |
 
 > Note:
 `SpinButton` behaves differently in VBA and WinForms, so appearance may vary depending on placement.<br>

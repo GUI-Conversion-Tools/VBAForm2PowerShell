@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.1.4
+' VBAForm2PowerShell v1.2.0
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025-2026 ZeeZeX
 ' This software is released under the MIT License.
@@ -12,23 +12,9 @@ Option Explicit
 #If VBA7 Then
     ' 64bit Office / VBA7 or later
     Private Declare PtrSafe Function GetSysColor Lib "user32" (ByVal nIndex As Long) As Long
-    Private Declare PtrSafe Function FindWindowW Lib "user32" (ByVal lpClassName As LongPtr, ByVal lpWindowName As LongPtr) As LongPtr
-    Private Declare PtrSafe Function GetClientRect Lib "user32" (ByVal hwnd As LongPtr, lpRect As RECT) As Long
-    Private Declare PtrSafe Function GetWindowRect Lib "user32" (ByVal hwnd As LongPtr, lpRect As RECT) As Long
-    Private Type RECT: Left As Long: Top As Long: Right As Long: Bottom As Long: End Type
-    Private Declare PtrSafe Function GetDC Lib "user32" (ByVal hwnd As LongPtr) As LongPtr
-    Private Declare PtrSafe Function ReleaseDC Lib "user32" (ByVal hwnd As LongPtr, ByVal hdc As LongPtr) As Long
-    Private Declare PtrSafe Function GetDeviceCaps Lib "gdi32" (ByVal hdc As LongPtr, ByVal nIndex As Long) As Long
 #Else
     ' 32bit Office
     Private Declare Function GetSysColor Lib "user32" (ByVal nIndex As Long) As Long
-    Private Declare Function FindWindowW Lib "user32" (ByVal lpClassName As Long, ByVal lpWindowName As Long) As Long
-    Private Declare Function GetClientRect Lib "user32" (ByVal hwnd As Long, lpRect As RECT) As Long
-    Private Declare Function GetWindowRect Lib "user32" (ByVal hwnd As Long, lpRect As RECT) As Long
-    Private Type RECT: Left As Long: Top As Long: Right As Long: Bottom As Long: End Type
-    Private Declare Function GetDC Lib "user32" (ByVal hwnd As Long) As Long
-    Private Declare Function ReleaseDC Lib "user32" (ByVal hwnd As Long, ByVal hdc As Long) As Long
-    Private Declare Function GetDeviceCaps Lib "gdi32" (ByVal hdc As Long, ByVal nIndex As Long) As Long
 #End If
 
 Private Const FORM_WINDOW_NAME As String = "window"
@@ -105,9 +91,6 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
     Dim fontStyle As String
     Dim widgetType As String
     Dim styleName As String
-    Dim sizeFactorsAndOffsets() As Variant
-    Dim sizeFactorX As Double
-    Dim sizeFactorY As Double
     Dim pixelWidth As Long
     Dim pixelHeight As Long
     Dim pixelTop As Long
@@ -116,12 +99,16 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
     Dim orientation As String
     Dim cursorType As String
     Dim caption As String
-    Dim dpis() As Variant
-    Dim scaleFactorX As Double
-    Dim scaleFactorY As Double
     Dim colorSetting As String
     Dim picSizeMode As String
     Dim tabPosition As String
+    Dim objHeaders As Object
+    Dim treeviewNodes As Collection
+    Dim node As Object
+    Dim nodeDictName As String
+    Dim nodeVarName As String
+    Dim nodeParentVarName As String
+    Dim enableScrollBar As Boolean
     
     r = ""
     
@@ -146,7 +133,7 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
     r = r & vbLf
     
     For Each root In frms
-        unavailableNames = VBA.Array("", "System")
+        unavailableNames = VBA.Array("", "System", "item", "row")
         
         For i = LBound(unavailableNames) To UBound(unavailableNames)
             unavailableNames(i) = LCase(unavailableNames(i))
@@ -160,22 +147,8 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
         End If
         unavailableNames(0) = LCase(FORM_WINDOW_NAME)
         
-        dpis = GetPrimaryMonitorDPI
-        scaleFactorX = dpis(0) / 96
-        scaleFactorY = dpis(1) / 96
-        
-        ' Get factor for size conversion
-        sizeFactorsAndOffsets = GetUserFormScaleFactorsAndOffsets(root)
-        sizeFactorX = sizeFactorsAndOffsets(0)
-        sizeFactorY = sizeFactorsAndOffsets(1)
-        ' Convert UserForm's size to pixel size
-        pixelWidth = UserFormSizeToPixel(root.Width, sizeFactorX)
-        pixelHeight = UserFormSizeToPixel(root.Height, sizeFactorY)
-        pixelWidth = pixelWidth - sizeFactorsAndOffsets(2)
-        pixelHeight = pixelHeight - sizeFactorsAndOffsets(3)
-        ' Divide window size by scaling factor
-        pixelWidth = Round(pixelWidth / scaleFactorX)
-        pixelHeight = Round(pixelHeight / scaleFactorY)
+        pixelWidth = UserFormSizeToPixel(root.InsideWidth)
+        pixelHeight = UserFormSizeToPixel(root.InsideHeight)
         
         formName = GenerateCtrlVarName(root, prefix, useCls)
         
@@ -192,7 +165,7 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
             r = r & "    " & "[object]$" & FORM_WINDOW_NAME & vbLf
             For Each ctrl In ctrls
                 r = r & "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & vbLf
-                If ContainsValue(Array("ComboBox", "ListBox"), TypeName(ctrl)) Then
+                If ContainsValue(Array("ComboBox", "ListBox"), TypeName(ctrl)) Or IsListView(ctrl) Then
                     itemsListName = GenerateCtrlVarName(ctrl, "$", False) & "_items_value"
                     r = r & "    " & "[object]" & itemsListName & vbLf
                 End If
@@ -202,6 +175,20 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                         r = r & "    " & "[object]" & GenerateCtrlVarName(item, "$", False) & vbLf
                     Next
                 End If
+                
+                If IsListView(ctrl) Then
+                    Set objHeaders = ctrl.ColumnHeaders
+                    i = 0
+                    For Each item In objHeaders
+                        i = i + 1
+                        r = r & "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & "_col" & i & vbLf
+                    Next
+                End If
+                
+                If IsTreeView(ctrl) Then
+                    r = r & "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & "_node_dict" & vbLf
+                End If
+                
             Next
             r = r & "    " & root.Name & "() {" & vbLf
         End If
@@ -242,31 +229,27 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
             
             widgetType = "System.Windows.Forms." & GetWinFormsControlName(ctrl)
             
-            pixelLeft = UserFormSizeToPixel(ctrl.Left, sizeFactorX)
-            pixelTop = UserFormSizeToPixel(ctrl.Top, sizeFactorY)
-            pixelWidth = UserFormSizeToPixel(ctrl.Width, sizeFactorX)
-            pixelHeight = UserFormSizeToPixel(ctrl.Height, sizeFactorY)
-            
-            pixelLeft = Round(pixelLeft / scaleFactorX)
-            pixelTop = Round(pixelTop / scaleFactorY)
-            pixelWidth = Round(pixelWidth / scaleFactorX)
-            pixelHeight = Round(pixelHeight / scaleFactorY)
+            pixelLeft = UserFormSizeToPixel(ctrl.Left)
+            pixelTop = UserFormSizeToPixel(ctrl.Top)
+            pixelWidth = UserFormSizeToPixel(ctrl.Width)
+            pixelHeight = UserFormSizeToPixel(ctrl.Height)
             
             controlVarName = GenerateCtrlVarName(ctrl, prefix, useCls)
             parentVarName = GenerateCtrlVarName(ctrl.Parent, prefix, useCls)
             itemsListName = controlVarName & "_items_value"
+            enableScrollBar = False
             
             r = r & indent & controlVarName & " = " & "New-Object" & " " & widgetType & vbLf
             r = r & indent & parentVarName & ".Controls.Add(" & controlVarName & ")" & vbLf
             r = r & indent & controlVarName & ".Location = New-Object System.Drawing.Point(" & pixelLeft & ", " & pixelTop & ")" & vbLf
             r = r & indent & controlVarName & ".Size = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
             
-            If GetWinFormsControlName(ctrl) = "GroupBox" Or Not ContainsValue(Array("Frame", "Image", "ScrollBar", "MultiPage"), TypeName(ctrl)) Then
+            If GetWinFormsControlName(ctrl) = "GroupBox" Or ContainsValue(Array("Label", "CommandButton", "TextBox", "SpinButton", "ListBox", "CheckBox", "ToggleButton", "OptionButton", "ComboBox"), TypeName(ctrl)) Or IsListView(ctrl) Then
                 ' Set ForeColor
                 r = r & indent & controlVarName & ".ForeColor = " & q & FormColorToHex(ctrl.ForeColor) & q & vbLf
             End If
             
-            If Not ContainsValue(Array("ScrollBar"), TypeName(ctrl)) Then
+            If ContainsValue(Array("Label", "CommandButton", "Frame", "TextBox", "SpinButton", "ListBox", "CheckBox", "ToggleButton", "OptionButton", "Image", "ComboBox"), TypeName(ctrl)) Or IsListView(ctrl) Then
                 ' Set BackColor
                 colorSetting = q & FormColorToHex(ctrl.BackColor) & q
                 If ContainsValue(Array("Label", "TextBox", "CommandButton", "CheckBox", "ToggleButton", "OptionButton", "Image", "ComboBox"), TypeName(ctrl)) Then
@@ -314,6 +297,7 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
             If TypeName(ctrl) = "TextBox" Then
                 r = r & indent & controlVarName & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
                 r = r & indent & controlVarName & ".Multiline = " & "$" & LCase(CBool(ctrl.Multiline)) & vbLf
+                r = r & indent & controlVarName & ".WordWrap = " & "$" & LCase(CBool(ctrl.WordWrap)) & vbLf
                 
                 If ctrl.PasswordChar <> "" Then
                     r = r & indent & controlVarName & ".PasswordChar = " & q & Left(ctrl.PasswordChar, 1) & q & vbLf
@@ -323,6 +307,14 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                     r = r & indent & controlVarName & ".ReadOnly = " & "$true" & vbLf
                 End If
                 
+                Select Case ctrl.ScrollBars
+                    Case fmScrollBarsHorizontal
+                        r = r & indent & controlVarName & ".ScrollBars = " & q & "Horizontal" & q & vbLf
+                    Case fmScrollBarsVertical
+                        r = r & indent & controlVarName & ".ScrollBars = " & q & "Vertical" & q & vbLf
+                    Case fmScrollBarsBoth
+                        r = r & indent & controlVarName & ".ScrollBars = " & q & "Both" & q & vbLf
+                End Select
                 
             End If
             
@@ -363,6 +355,7 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                 r = r & indent & controlVarName & ".Maximum = " & ctrl.Max & vbLf
             End If
             
+            
             ' Set each Caption in MultiPage
             If TypeName(ctrl) = "MultiPage" Then
                 
@@ -394,12 +387,13 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                     caption = Convert2PowerShellFormatText(caption)
                     r = r & indent & childVarName & " = New-Object System.Windows.Forms.TabPage" & vbLf
                     r = r & indent & controlVarName & ".Controls.Add(" & childVarName & ")" & vbLf
+                    r = r & indent & childVarName & ".BackColor = " & q & FormColorToHex(&H8000000F) & q & vbLf
                     r = r & indent & childVarName & ".Text = " & q & caption & q & vbLf
                 Next
             End If
             
             ' Font size is rounded because VBA officially does not support decimal fraction in font settings
-            If GetWinFormsControlName(ctrl) = "GroupBox" Or Not ContainsValue(Array("Frame", "ScrollBar", "Image", "SpinButton"), TypeName(ctrl)) Then
+            If GetWinFormsControlName(ctrl) = "GroupBox" Or ContainsValue(Array("Label", "CommandButton", "TextBox", "ListBox", "CheckBox", "ToggleButton", "OptionButton", "ComboBox", "MultiPage"), TypeName(ctrl)) Or IsListView(ctrl) Or IsTreeView(ctrl) Then
                 fontStyle = ""
                 
                 If ctrl.Font.Bold Then fontStyle = fontStyle & DotNetTypeLiteral("System.Drawing.FontStyle", useCls) & "::Bold"
@@ -439,6 +433,50 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                 End If
             End If
             
+            
+            If IsListView(ctrl) Then
+                r = r & indent & controlVarName & ".View = " & q & "Details" & q & vbLf
+                r = r & indent & controlVarName & ".FullRowSelect = " & "$true" & vbLf
+                r = r & indent & controlVarName & ".GridLines = " & "$true" & vbLf
+                r = r & indent & controlVarName & ".MultiSelect = " & "$" & LCase(CBool(ctrl.MultiSelect)) & vbLf
+                r = r & DefineListViewColumns(ctrl, indent, prefix, useCls) & vbLf
+                r = r & indent & itemsListName & " = " & GetListViewItems(ctrl, indent) & vbLf
+                r = r & indent & "foreach ($row in " & itemsListName & ") {" & vbLf
+                r = r & indent & "    $item = New-Object System.Windows.Forms.ListViewItem($row[0])" & vbLf
+                r = r & indent & "    for ($i = 1; $i -lt $row.Length; $i++) {" & vbLf
+                r = r & indent & "        [void]$item.SubItems.Add($row[$i])" & vbLf
+                r = r & indent & "    }" & vbLf
+                r = r & indent & "    [void]" & controlVarName & ".Items.Add($item)" & vbLf
+                r = r & indent & "}" & vbLf
+            End If
+            
+            If IsTreeView(ctrl) Then
+                nodeDictName = controlVarName & "_node_dict"
+                
+                If HasScrollProperty(ctrl) Then
+                    enableScrollBar = ctrl.Scroll
+                Else
+                    enableScrollBar = True
+                End If
+                r = r & indent & controlVarName & ".Scrollable = " & "$" & LCase(CBool(enableScrollBar)) & vbLf
+                
+                Set treeviewNodes = GetAllTreeViewNodesBfs(ctrl)
+                r = r & indent & nodeDictName & " = @{}" & vbLf
+                For Each item In treeviewNodes
+                    Set node = item(0)
+                    nodeVarName = nodeDictName & "[" & q & Convert2PowerShellFormatText(node.Key) & q & "]"
+                    If node.Parent Is Nothing Then
+                        nodeParentVarName = controlVarName
+                    Else
+                        nodeParentVarName = nodeDictName & "[" & q & Convert2PowerShellFormatText(node.Parent.Key) & q & "]"
+                    End If
+                    r = r & indent & nodeVarName & " = " & nodeParentVarName & ".Nodes.Add(" & q & Convert2PowerShellFormatText(node.text) & q & ")" & vbLf
+                    If node.Expanded Then
+                        r = r & indent & nodeVarName & ".Expand() | Out-Null" & vbLf
+                    End If
+                Next item
+            End If
+            
             If TypeName(ctrl) = "Image" Then
                 
                 Select Case ctrl.PictureSizeMode
@@ -468,7 +506,7 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
         End If
         
         If useCls Then
-            r = r & indent & "}" & vbLf
+            r = r & "    " & "}" & vbLf
         End If
         
         If useCls Then
@@ -582,29 +620,47 @@ Private Function GetBorderSetting(ByVal ctrl As Object, ByVal useCls As Boolean)
 End Function
 
 Private Function GetTextAlignSetting(ByVal ctrl As Object, ByVal useCls As Boolean) As String
-   Dim r As String
-   Const q As String = """"
-   Dim position As String
-   r = ""
-   
-   Select Case ctrl.TextAlign
-        Case fmTextAlignLeft
-            position = "Left"
-        Case fmTextAlignCenter
-            position = "Center"
-        Case fmTextAlignRight
-            position = "Right"
-        Case Else
-            position = "Center"
-    End Select
+    Dim r As String
+    Const q As String = """"
+    Dim position As String
+    r = ""
     
     If TypeName(ctrl) = "TextBox" Then
-        position = q & position & q
+        Select Case ctrl.TextAlign
+            Case fmTextAlignLeft
+                position = "Left"
+            Case fmTextAlignCenter
+                position = "Center"
+            Case fmTextAlignRight
+                position = "Right"
+            Case Else
+                position = "Center"
+        End Select
+    ElseIf ContainsValue(Array("CheckBox", "OptionButton", "ToggleButton"), TypeName(ctrl)) Then
+        Select Case ctrl.TextAlign
+            Case fmTextAlignLeft
+                position = "MiddleLeft"
+            Case fmTextAlignCenter
+                position = "MiddleCenter"
+            Case fmTextAlignRight
+                position = "MiddleRight"
+            Case Else
+                position = "MiddleCenter"
+        End Select
     Else
-        position = q & "Top" & position & q
+        Select Case ctrl.TextAlign
+            Case fmTextAlignLeft
+                position = "TopLeft"
+            Case fmTextAlignCenter
+                position = "TopCenter"
+            Case fmTextAlignRight
+                position = "TopRight"
+            Case Else
+                position = "TopCenter"
+        End Select
     End If
     
-    r = r & ".TextAlign = " & position
+    r = r & ".TextAlign = " & q & position & q
     GetTextAlignSetting = r
 End Function
 
@@ -657,8 +713,37 @@ Private Function GetWinFormsControlName(ByVal ctrl As Object) As String
             r = "TabControl"
         Case Else
             r = ""
+            
+            If IsListView(ctrl) Then
+                r = "ListView"
+            End If
+            
+            If IsTreeView(ctrl) Then
+                r = "TreeView"
+            End If
+            
     End Select
     GetWinFormsControlName = r
+End Function
+
+Private Function IsListView(ByVal ctrl As Object) As Boolean
+    ' Since the class name of the ListView may vary depending on the version, so use InStr to check it.
+    ' e.g ListView/ListView2/ListView3/ListView4
+    If InStr(TypeName(ctrl), "ListView") = 1 Then
+        IsListView = True
+    Else
+        IsListView = False
+    End If
+End Function
+
+Private Function IsTreeView(ByVal ctrl As Object) As Boolean
+    ' Since the class name of the TreeView may vary depending on the version, so use InStr to check it.
+    ' e.g TreeView/TreeView2/TreeView3/TreeView4
+    If InStr(TypeName(ctrl), "TreeView") = 1 Then
+        IsTreeView = True
+    Else
+        IsTreeView = False
+    End If
 End Function
 
 Private Function GetControlCursorType(ByVal ctrl As Object) As String
@@ -745,6 +830,188 @@ Private Function GetListBoxValue(ByVal ctrl As Object, ByVal indent As String) A
     GetListBoxValue = r
 End Function
 
+Private Function DefineListViewColumns(ByVal ctrl As Object, ByVal indent As String, ByVal prefix As String, ByVal useCls As Boolean) As String
+    ' Generate code for the ListView headers.
+    ' Example:
+    ' $ListView1_col1 = New-Object System.Windows.Forms.ColumnHeader
+    ' $ListView1_col1.Text = "Header1"
+    ' $ListView1_col1.Width = 133
+    ' $ListView1_col1.TextAlign = "Left"
+
+    ' $ListView1_col2 = New-Object System.Windows.Forms.ColumnHeader
+    ' $ListView1_col2.Text = "Header2"
+    ' $ListView1_col2.Width = 133
+    ' $ListView1_col2.TextAlign = "Left"
+
+    ' $ListView1_col3 = New-Object System.Windows.Forms.ColumnHeader
+    ' $ListView1_col3.Text = "Header3"
+    ' $ListView1_col3.Width = 133
+    ' $ListView1_col3.TextAlign = "Left"
+
+    ' $listView1.Columns.Add($ListView1_col1) | Out-Null
+    ' $listView1.Columns.Add($ListView1_col2) | Out-Null
+    ' $listView1.Columns.Add($ListView1_col3) | Out-Null
+    Dim objHeaders As Object
+    Set objHeaders = ctrl.ColumnHeaders
+    Dim controlVarName As String
+    Dim i As Long
+    Dim item As Variant
+    Dim r As String
+    Dim colVarName As String
+    Dim headerText As String
+    Dim colWidth As Long
+    Dim colAlign As String
+    Const q As String = """"
+    controlVarName = GenerateCtrlVarName(ctrl, prefix, useCls)
+    r = ""
+    i = 0
+    For Each item In objHeaders
+        i = i + 1
+        colVarName = controlVarName & "_col" & i
+        headerText = Convert2PowerShellFormatText(item.text)
+        colAlign = GetPSWinFormsListViewAlignment(item)
+        colWidth = UserFormSizeToPixel(item.Width)
+        r = r & indent & colVarName & " = " & "New-Object System.Windows.Forms.ColumnHeader" & vbLf
+        r = r & indent & colVarName & ".Text = " & q & headerText & q & vbLf
+        r = r & indent & colVarName & ".Width = " & colWidth & vbLf
+        r = r & indent & colVarName & ".TextAlign = " & q & colAlign & q & vbLf
+    Next item
+    
+    
+    i = 0
+    For Each item In objHeaders
+        i = i + 1
+        colVarName = controlVarName & "_col" & i
+        r = r & indent & controlVarName & ".Columns.Add(" & colVarName & ") | Out-Null" & vbLf
+    Next item
+    
+    DefineListViewColumns = r
+End Function
+
+
+Private Function GetPSWinFormsListViewAlignment(ByVal objLvHeader As Object) As String
+    ' Header Alignment(ListView) -> ColumnHeader.TextAlign(PowerShell WinForms ListView)
+    Const cnsLvwColumnLeft As Long = 0
+    Const cnsLvwColumnRight As Long = 1
+    Const cnsLvwColumnCenter As Long = 2
+    Dim result As String
+    Select Case objLvHeader.Alignment
+        Case cnsLvwColumnLeft
+            result = "Left"
+        Case cnsLvwColumnRight
+            result = "Right"
+        Case cnsLvwColumnCenter
+            result = "Center"
+        Case Else
+            result = "Left"
+    End Select
+    GetPSWinFormsListViewAlignment = result
+End Function
+
+Private Function GetListViewItems(ByVal ctrl As Object, ByVal indent As String) As String
+    ' Retrieve the items of a ListView as a string in the format:
+    ' @(
+    '     ,@("Item1-1", "Item1-2", "Item1-3")
+    '     ,@("Item2-1", "Item2-2", "Item2-3")
+    '     ,@("Item3-1", "Item3-2", "Item3-3")
+    ' )
+    Dim item As Object
+    Dim i As Long
+    Dim coll As Collection
+    Dim resultColl As New Collection
+    Dim arr() As Variant
+    Dim r As String
+    Const arrayLiteralStart As String = "@("
+    Const arrayLiteralEnd As String = ")"
+    Const q As String = """"
+    r = ""
+    For Each item In ctrl.ListItems
+        Set coll = New Collection
+        coll.Add q & Convert2PowerShellFormatText(item.text) & q
+        
+        ' Because older versions of the ListView control do not support For Each for SubItems, use index-based access.
+        For i = 1 To ctrl.ColumnHeaders.Count - 1
+            coll.Add q & Convert2PowerShellFormatText(item.SubItems(i)) & q
+        Next
+        
+        arr = Collection2Array(coll)
+        resultColl.Add "," & arrayLiteralStart & Join(arr, ", ") & arrayLiteralEnd
+        
+    Next
+    
+    arr = Collection2Array(resultColl)
+    If resultColl.Count > 0 Then
+        r = r & arrayLiteralStart & vbLf & indent & "    " & Join(arr, "" & vbLf & indent & "    ") & vbLf & indent & arrayLiteralEnd
+    Else
+        r = r & arrayLiteralStart & arrayLiteralEnd
+    End If
+    GetListViewItems = r
+End Function
+
+Private Function GetAllTreeViewNodesBfs(ByVal treeviewCtrl As Object) As Collection
+    ' This function performs a Breadth-First Search (BFS) on a TreeView control
+    ' and returns a collection of nodes along with their hierarchy path.
+    ' example:
+    ' [[node, "1"], [node, "1-1"], [node, "1-2"], [node, "1-3"], [node, "1-4"], [node, "1-5"], [node, "1-6"], [node, "1-1-1"]]
+    Dim queue As Collection
+    Dim item As Variant
+    Dim node As Object
+    Dim child As Object
+    Dim hierarchy As String
+    Dim childIndex As Long
+    Dim resultColl As Collection
+    Set resultColl = New Collection
+    Set queue = New Collection
+    
+    Dim nd As Object
+    Dim rootIndex As Long
+    rootIndex = 1
+    
+    ' Step 1: Add all root nodes (nodes without parents) to the queue
+    ' Each root gets a hierarchy label like "1", "2", etc.
+    For Each nd In treeviewCtrl.nodes
+        If nd.Parent Is Nothing Then
+            queue.Add VBA.Array(nd, CStr(rootIndex))
+            rootIndex = rootIndex + 1
+        End If
+    Next nd
+    
+    ' Step 2: Perform BFS traversal
+    Do While queue.Count > 0
+        item = queue(1)
+        queue.Remove 1
+        
+        Set node = item(0)
+        hierarchy = item(1)
+        ' Add current node and its hierarchy to the result collection
+        resultColl.Add VBA.Array(node, hierarchy)
+        ' Step 3: Enqueue all children of the current node
+        Set child = node.child ' Get first child
+        childIndex = 1
+        
+        Do While Not child Is Nothing
+            ' Append child index to hierarchy (e.g., "1-2", "1-2-1")
+            queue.Add VBA.Array(child, hierarchy & "-" & childIndex)
+            childIndex = childIndex + 1
+            Set child = child.Next
+        Loop
+    Loop
+    ' Return the collection of (node, hierarchy) pairs
+    Set GetAllTreeViewNodesBfs = resultColl
+End Function
+
+Private Function HasScrollProperty(ByVal ctrl As Object) As Boolean
+    ' Since the Scroll property does not exist in older versions of TreeView, use this function to check for the property beforehand.
+    Dim temp As Variant
+    On Error GoTo Exception
+    temp = VBA.Array(ctrl.Scroll)
+    HasScrollProperty = True
+    On Error GoTo 0
+    Exit Function
+Exception:
+    HasScrollProperty = False
+End Function
+
 Private Function Convert2PowerShellFormatText(ByVal text As String) As String
     ' Escape special characters in the string
     Dim targetChars() As Variant
@@ -791,6 +1058,12 @@ Private Function GenerateBatchCode() As String
 End Function
 
 Private Function FormColorToHex(ByVal clr As Long) As String
+    ' Example:
+    ' 16777215 -> "#FFFFFF"
+    ' 0 -> "#000000"
+    ' &H000000FF& (255) -> "#FF0000"
+    ' &H00B4769E& (11826846) -> "#9E76B4"
+    ' &H8000000F& (-2147483633) -> "#F0F0F0"(Windows XP[Luna Theme]/10/11), "#D4D0C8"(Windows 2000/XP[Classic Theme])
     Dim r As Long, g As Long, b As Long
     ' Convert a system color to its decimal color code when the parameter is a system color
     If 0 > clr Or clr >= 2147483648# Then
@@ -893,78 +1166,16 @@ Private Function IsStrictlyEqual(ByVal value1 As Variant, ByVal value2 As Varian
     IsStrictlyEqual = False
 End Function
 
-Private Function Win32_FindWindowW(ByVal className As String, ByVal windowTitle As String) As LongPtr
-    ' Get the window's hwnd
-    ' className: The window's class name (exact match). If not specified, provide "", Empty, or vbNullString
-    ' windowTitle: The window's title (exact match). If not specified, provide "", Empty, or vbNullString
-    ' Example: Get Excel's main window by specifying only the class name
-    ' hwnd = Win32_FindWindowW("XLMAIN", Empty)
-    Dim hwnd As LongPtr
-    If className = "" Then className = vbNullString
-    If windowTitle = "" Then windowTitle = vbNullString
-    hwnd = FindWindowW(StrPtr(className), StrPtr(windowTitle))
-    Win32_FindWindowW = hwnd
-End Function
-
-Private Function GetUserFormScaleFactorsAndOffsets(ByVal frm As Object) As Variant()
-    ' Function to get the factors and offsets for converting a UserForm's size to pixel units
-    ' Obtains the window size in pixels via Windows API and compares it with the UserForm's design size
-    Dim clRect As RECT
-    Dim winRect As RECT
-    Dim pixClWidth As Long, pixClHeight As Long
-    Dim pixWinWidth As Long, pixWinHeight As Long
-    Dim pixWidthOffset As Long, pixHeightOffset As Long
-    Dim scaleX As Double, scaleY As Double
-    Dim hwnd As LongPtr
-    Dim originalFrmTitle As String
-    Dim tempFrmTitle As String
-    Dim results(0 To 3) As Variant
-    
-    ' To avoid getting the handle of a window with the same name, temporarily change the title to a unique name when obtaining hwnd
-    ' Restore the original title immediately after obtaining hwnd
-    originalFrmTitle = frm.caption
-    tempFrmTitle = "TempName_" & GenerateUUIDv4()
-    frm.caption = tempFrmTitle
-    hwnd = Win32_FindWindowW("", tempFrmTitle)
-    frm.caption = originalFrmTitle
-    
-    If hwnd = 0 Then
-        Err.Raise Number:=513, Description:="Failed to get HWND."
-    End If
-    
-    ' Get the actual client area size
-    GetClientRect hwnd, clRect
-    pixClWidth = clRect.Right - clRect.Left
-    pixClHeight = clRect.Bottom - clRect.Top
-    
-    ' Get the difference in X and Y between the actual window size and the client area size
-    GetWindowRect hwnd, winRect
-    pixWinWidth = winRect.Right - winRect.Left
-    pixWinHeight = winRect.Bottom - winRect.Top
-    pixWidthOffset = pixWinWidth - pixClWidth
-    pixHeightOffset = pixWinHeight - pixClHeight
-    
-    ' Twips -> pixel conversion factors
-    scaleX = pixClWidth / frm.InsideWidth
-    scaleY = pixClHeight / frm.InsideHeight
-    
-    ' If horizontal and vertical scales are almost the same, return the average
-    If Abs(scaleX - scaleY) < 0.01 Then
-        results(0) = (scaleX + scaleY) / 2
-        results(1) = (scaleX + scaleY) / 2
-    Else
-        ' If there is a difference between horizontal and vertical scales
-        results(0) = scaleX
-        results(1) = scaleY
-    End If
-    results(2) = pixWidthOffset
-    results(3) = pixHeightOffset
-    GetUserFormScaleFactorsAndOffsets = results
-End Function
-
-Private Function UserFormSizeToPixel(ByVal ufSize As Double, ByVal factor As Double) As Long
+Private Function UserFormSizeToPixel(ByVal ufSize As Double) As Long
     ' Function to convert the size of a UserForm or control to pixels
-    UserFormSizeToPixel = Round(ufSize * factor)
+    ' Excel VBA UserForm dimensions are internally handled as
+    ' DPI-independent logical points based on a fixed 96 DPI system.
+    ' Therefore, point-to-pixel conversion can be calculated as:
+    '     pixel = point * (96 / 72)
+    ' and works consistently regardless of the monitor DPI setting.
+    Dim pixelSize As Long
+    pixelSize = Round(ufSize * (96 / 72))
+    UserFormSizeToPixel = pixelSize
 End Function
 
 Private Function GenerateUUIDv4() As String
@@ -1071,29 +1282,6 @@ Private Sub SaveUTF8Text_NoBOM(ByVal filePath As String, ByVal textData As Strin
     Set stream = Nothing
 End Sub
 
-Private Function GetPrimaryMonitorDPI() As Variant()
-    Dim hdc As LongPtr
-    Dim dpiX As Long, dpiY As Long
-    Dim results(0 To 1) As Variant
-    Const LOGPIXELSX As Long = 88 ' Horizontal DPI
-    Const LOGPIXELSY As Long = 90 ' Vertical DPI
-    
-    ' Get device context for the entire screen
-    hdc = GetDC(0)
-    
-    ' Get horizontal and vertical DPI
-    dpiX = GetDeviceCaps(hdc, LOGPIXELSX)
-    dpiY = GetDeviceCaps(hdc, LOGPIXELSY)
-    
-    ' Release the device context
-    ReleaseDC 0, hdc
-    
-    results(0) = dpiX
-    results(1) = dpiY
-    
-    ' Return DPI
-    GetPrimaryMonitorDPI = results
-End Function
 
 Private Function GenerateUnsupportedControlMessage(ByVal ctrl As Object) As String
     Const q As String = """"
