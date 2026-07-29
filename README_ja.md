@@ -1,4 +1,4 @@
-# VBAForm2PowerShell - Excel VBA UserForm to PowerShell GUI (WinForms) Converter
+# VBAForm2PowerShell - VBA UserForm to PowerShell GUI (WinForms) Converter
 🌎[English](https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell/blob/main/README.md)<br><br>
 このプログラムは、Excel VBAにて作成したユーザーフォームをPowerShellのGUI(WinForms)用に変換可能なプログラムです<br>
 
@@ -7,16 +7,19 @@
 <img width="704" height="695" alt="Image" src="https://github.com/user-attachments/assets/98cb0e04-e541-447d-9ff6-18469dcfe49f" /><br><br>
 
 ## 動作要件
-- 対応OS: Windows
-- 必要ソフトウェア: Microsoft Excel 2000以降
+- 対応OS: Windows XP以上
+- 必要ソフトウェア: Microsoft Excel/Word/PowerPoint/Outlook 2000以降
 - 推奨環境: Microsoft Excel 2016以降
 
 ## 動作確認済環境
 - Windows XP(SP3) 
 - Windows 10/11
+- Excel 2000(32bit)
 - Excel 2010(32bit)
 - Excel 2016(32bit)
 - Excel 2019(64bit)
+- Word/PowerPoint/Outlook 2000 (32bit)
+- Word/PowerPoint/Outlook 2019 (64bit)
 
 ## 反映する項目
 - 変数名(オブジェクト名)
@@ -32,6 +35,7 @@
 - `ComboBox`, `ListBox`, `ListView`, `TreeView`に設定したアイテム
 - `OptionButton`, `CheckBox`, `ToggleButton`の選択状態
 - `.BackStyle`に設定した透明表示設定 (ただし次のコントロールを除く: `ComboBox` [.Style = fmStyleDropDownList])
+- コントロールに埋め込まれた画像 (`Image`)
 - `.Orientation`/`.Min`/`.Max`プロパティ (`ScrollBar`)
 - `.Alignment`プロパティ (`CheckBox`. `OptionButton`)
 - `.TabOrientation`プロパティ (`MultiPage`)
@@ -45,7 +49,7 @@
 - `.Scroll` プロパティ (`TreeView`)
 - `.Expanded` プロパティ (`TreeView.Nodes`)
 
->注:
+>Note:
 >
 >-   `.BackStyle`が `fmBackStyleOpaque`の場合VBAのコントロールの`.BackColor`を直接適用します
 >-   `.BackStyle`が `fmBackStyleTransparent`の場合:
@@ -86,7 +90,9 @@
 | `ListView`(`.View=lvwReport`) | `ListView` |
 | `TreeView` | `TreeView` |
 
-※`SpinButton`は仕様が異なるため、配置方法によっては外観が異なります<br>
+> Note:
+>- `SpinButton`は仕様が異なるため、配置方法によっては外観が異なります
+
 上記以外のコントロールがフォーム上にある場合、変換に失敗するので該当のコントロールを削除したうえで再度変換を行ってください<br>
 
 ## 使い方
@@ -105,8 +111,41 @@ Call ConvertForm2PS(UserForm1)
 Call ConvertForm2PS(UserForm1, True)
 ```
 ※`UserForm1`の部分は変換したいユーザーフォームのオブジェクト名に変えてください<br>
-5. 正常に変換が完了した場合、メッセージが表示されExcelブックと同じディレクトリに`output.ps1`または`output.bat`が作成されます<br>
+5. 正常に変換が完了した場合、メッセージが表示され`output.ps1`または`output.bat`が作成されます<br>
 6. GUIの外観を確認したら、`.ps1`/`.bat`ファイルを編集し`.ShowDialog()`の上に`Button.Add_Click({ 関数名 })`でボタン押下時の関数の設定などをしてください<br>
+
+## 出力先フォルダ
+
+`VBAForm2PS_output`フォルダがワークブックと同じディレクトリに生成され、すべての生成されたファイルはこのフォルダ内に格納されます
+
+### ExcelまたはWord
+
+ExcelまたはWordの場合出力先フォルダはマクロを含んだファイルと同じディレクトリに作成されます
+
+-   **Excel**: ワークブックが配置されたディレクトリ (`ThisWorkbook.Path`)
+-   **Word**: ドキュメントが配置されたディレクトリ (`MacroContainer.Path`)
+
+```
+ワークブックが配置されたフォルダ/
+├─ MyWorkbook.xlsm
+└─ VBAForm2PS_output/
+   ├─ output.ps1
+   ├─ image_base64.json
+   └─ エクスポートされた画像ファイル...
+```
+
+### 他のOfficeの場合
+他のOffice (PowerPoint, Outlookなど)で実行する場合または未保存のExcelブック/Wordドキュメント下で実行する場合、出力先フォルダは**ドキュメントフォルダ**に作成されます.
+
+```
+C:\Users\%USERNAME%\Documents\
+└─ VBAForm2PS_output/
+   ├─ output.ps1
+   ├─ image_base64.json
+   └─ エクスポートされた画像ファイル...
+```
+
+ドキュメントフォルダの取得に失敗した場合は、Cドライブ直下に出力先フォルダが作成されます
 
 ## 引数
 
@@ -118,6 +157,7 @@ Call ConvertForm2PS(UserForm1, True)
 |`saveAsBat` |`Boolean`|**省略可能 (デフォルト: `False`).**<br>`True`にした場合PowerShellスクリプトをダブルクリックで起動可能な`.bat`ファイルとして保存する|
 |`useCls`  |`Boolean` |**省略可能 (デフォルト: `False`).**<br>`True`にした場合生成したPowerShellコードにおいて各フォームをクラス化する&nbsp;&nbsp;`frms`が配列の場合は自動的に`True`に設定される|
 |`noMainLoop`  |`Boolean`|**省略可能 (デフォルト: `False`).**<br>`True`にした場合生成したPowerShellスクリプトに`.ShowDialog()`を含めなくする &nbsp;&nbsp;`useCls`が`True`の場合はインスタンスの作成(例:`$obj_UserForm1 = [UserForm1]::new()`)もスキップする|
+|`imageMode`  |`String` |**省略可能 (デフォルト: `"file"`)**<br>変換時の画像ファイルの扱いを設定する、以下の値を設定可能:<br>• `"file"` (デフォルト): 画像は出力先フォルダ内に個別の画像ファイルとして保存され、生成されたコードはそれらの画像を参照する<br>• `"disabled"`: 画像の処理そのものを無効化し、生成されたコード内でも画像の参照設定を行わない<br>• `"reference-only"`: `"file"`と同様、画像を参照するコードを生成するが画像の出力自体はスキップする　既に画像ファイルが存在する場合に有用<br>• `"base64"`: 画像をBase64文字列としてコード内に直接埋め込み単一ファイルに収める<br>• `"base64-dict"`: 画像のBase64文字列をコード内の`Hashtable`に格納する<br>• `"base64-json"`: 画像のBase64文字列を外部の`image_base64.json`内に格納する、生成されたコードはそのJSONファイルを参照する<br>• `"base64-json-reference"`: `"base64-json"`と同様、`image_base64.json`を参照するコードを生成するがJSONファイルの生成自体はスキップする　JSONファイルが既に存在する場合に有用|
 
 `ConvertForm2PS`は単一のユーザーフォームまたは配列内の複数のユーザーフォームを変換することが可能です
 
@@ -130,6 +170,9 @@ Call ConvertForm2PS(UserForm1, useCls:=True)
 
 ' 実行例: 複数のフォームを変換 (自動的にクラス化される)
 Call ConvertForm2PS(Array(UserForm1, UserForm2))
+
+' 実行例: 単一のフォームを変換 (画像をBase64文字列としてコード内に直接埋め込む)
+Call ConvertForm2PS(UserForm1, imageMode:="base64")
 ```
 
 ## 子要素を設定できないコントロールの並び順について

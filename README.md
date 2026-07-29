@@ -1,14 +1,14 @@
-# VBAForm2PowerShell - Excel VBA UserForm to PowerShell GUI (WinForms) Converter
+# VBAForm2PowerShell - VBA UserForm to PowerShell GUI (WinForms) Converter
 :jp:[日本語の説明はこちら](https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell/blob/main/README_ja.md)<br><br>
-This program converts userforms created in Microsoft Excel VBA into PowerShell (WinForms) code.<br>
+This program converts userforms created in Microsoft Office VBA into PowerShell (WinForms) code.<br>
 
 ## Example
 <img width="681" height="1275" alt="Image" src="https://github.com/user-attachments/assets/51414770-91c2-44af-874c-d54134efae62" /><br>
 <img width="704" height="695" alt="Image" src="https://github.com/user-attachments/assets/86ba4934-ed13-4871-adea-3b285f94f14d" /><br>
 
 ## System Requirements
-- Supported OS: Windows
-- Required Software: Microsoft Excel 2000 or later
+- Supported OS: Windows XP or later
+- Required Software: Microsoft Excel/Word/PowerPoint/Outlook 2000 or later
 - Recommended Environment: Microsoft Excel 2016 or later
 
 ## Verified Operating Environments
@@ -18,6 +18,8 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 - Excel 2010(32bit)
 - Excel 2016(32bit)
 - Excel 2019(64bit)
+- Word/PowerPoint/Outlook 2000 (32bit)
+- Word/PowerPoint/Outlook 2019 (64bit)
 
 ## Converted Elements
 - Variable names (object names)
@@ -33,6 +35,7 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 - Items set in `ComboBox`, `ListBox`, `ListView`, `TreeView`
 - Selection state of `OptionButton`, `CheckBox` and `ToggleButton`
 - Transparent background setting specified in `.BackStyle`(Excluding `ComboBox` [.Style = fmStyleDropDownList])
+- Images Embedded in Controls (`Image`)
 - `.Orientation`/`.Min`/`.Max` property (`ScrollBar`)
 - `.Alignment` property (`CheckBox`. `OptionButton`)
 - `.TabOrientation` property (`MultiPage`)
@@ -88,7 +91,8 @@ This program converts userforms created in Microsoft Excel VBA into PowerShell (
 | `TreeView` | `TreeView` |
 
 > Note:
-`SpinButton` behaves differently in VBA and WinForms, so appearance may vary depending on placement.<br>
+>- `SpinButton` behaves differently in VBA and WinForms, so appearance may vary depending on placement.<br>
+
 If unsupported controls exist on the form, the conversion will fail. If that case, please remove those controls and run the conversion again.<br>
 
 
@@ -110,8 +114,41 @@ Call ConvertForm2PS(UserForm1, True)
 ```
    > Note: Replace UserForm1 with the object name of the form you want to convert.
 
-5.  If conversion succeeds, a message will appear, and an `output.ps1`/`output.bat` file will be created in the same directory as your Excel workbook.<br>
+5.  If conversion succeeds, a message will appear, and an `output.ps1`/`output.bat` file will be created.<br>
 6.  After checking the GUI appearance, edit the `.ps1`/`.bat` file and, above `.ShowDialog()`, configure event handlers for controls (e.g., `Button.Add_Click({ FunctionName })`).<br>
+
+## Output Directory
+
+A dedicated `VBAForm2PS_output` folder is automatically created in the workbook directory, and all generated files are saved there:
+
+### Excel and Word
+
+When running from Excel or Word, the output folder is created in the same directory as the macro-enabled document.
+
+-   **Excel**: Uses the workbook's directory (`ThisWorkbook.Path`)
+-   **Word**: Uses the document's directory (`MacroContainer.Path`)
+
+```
+WorkbookFolder/
+├─ MyWorkbook.xlsm
+└─ VBAForm2PS_output/
+   ├─ output.ps1
+   ├─ image_base64.json
+   └─ exported images...
+```
+
+### Other Office Applications
+When running from other Office applications (such as PowerPoint, Outlook, etc.), or when the current Excel workbook or Word document has not yet been saved, the output folder is created in the user's **Documents** folder instead.
+
+```
+C:\Users\%USERNAME%\Documents\
+└─ VBAForm2PS_output/
+   ├─ output.ps1
+   ├─ image_base64.json
+   └─ exported images...
+```
+
+If the Documents folder cannot be resolved, the output folder will be created in the root of the **C:** drive as a final fallback.
 
 ## Parameters
 
@@ -123,6 +160,7 @@ Call ConvertForm2PS(UserForm1, True)
 |`saveAsBat` |`Boolean`|**Optional (Default: `False`).**<br>If set to `True`, the generated PowerShell script will be saved as a `.bat` file that can be executed by double-clicking.|
 |`useCls`  |`Boolean` |**Optional (Default: `False`).**<br>If set to `True`, the generated PowerShell code will wrap each form in a PowerShell class structure. This is automatically set to `True` if `frms` is an array.|
 |`noMainLoop`  |`Boolean`|**Optional (Default: `False`).**<br>If set to `True`, the `.ShowDialog()` call will be omitted from the end of the generated PowerShell script. When `useCls` is also `True`, this will additionally skip the code that creates the object instances (e.g., `$obj_UserForm1 = [UserForm1]::new()`).|
+|`imageMode`  |`String` |**Optional (Default: `"file"`).**<br>Determines how image files used in the UserForm are handled during conversion. You can choose one of the following options:<br>• `"file"` (Default): Images are saved as separate external files in the output directory, and the generated code references these files.<br>• `"disabled"`: Image processing is disabled, and no image-related code is generated.<br>• `"reference-only"`: Similar to `"file"`, generates code that references image files, but does not export the image files. Useful when the image files already exist.<br>• `"base64"`: Images are embedded directly into the generated code as Base64-encoded strings, keeping everything in a single file.<br>• `"base64-dict"`: Images are embedded as Base64 strings within a `Hashtable` inside the generated code.<br>• `"base64-json"`: Images are stored in an external `image_base64.json` file as Base64 strings, and the generated code references the JSON file.<br>• `"base64-json-reference"`: Similar to `"base64-json"`, generates code that references `image_base64.json`, but does not export the JSON file. Useful when the JSON file already exists.|
 
 You can execute the conversion by calling the `ConvertForm2PS` with a single UserForm object or an array of multiple UserForms.
 
@@ -135,6 +173,9 @@ Call ConvertForm2PS(UserForm1, useCls:=True)
 
 ' Example: Converting multiple forms (Automatically uses Class-based style)
 Call ConvertForm2PS(Array(UserForm1, UserForm2))
+
+' Example: Converting a single form (With image streams embedded directly as Base64 text)
+Call ConvertForm2PS(UserForm1, imageMode:="base64")
 ```
 
 ## Control Order (for Controls Without Child Elements)

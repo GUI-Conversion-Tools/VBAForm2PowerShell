@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.2.0
+' VBAForm2PowerShell v1.3.0
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025-2026 ZeeZeX
 ' This software is released under the MIT License.
@@ -9,15 +9,56 @@ Attribute VB_Name = "VBAForm2PowerShell"
 Option Explicit
 
 
+#If VBA7 = 0 Then
+    ' Define a placeholder LongPtr type for VBA6 or earlier.
+    ' This allows code that uses LongPtr to compile in older VBA versions,
+    ' even though those versions do not natively support the LongPtr type.
+    Private Enum LongPtr
+        [_]
+    End Enum
+#End If
+
 #If VBA7 Then
     ' 64bit Office / VBA7 or later
     Private Declare PtrSafe Function GetSysColor Lib "user32" (ByVal nIndex As Long) As Long
+    
+    Private Declare PtrSafe Function GdiplusStartup Lib "gdiplus" (ByRef token As LongPtr, ByRef inputbuf As GDIPlusStartupInput, Optional ByVal outputbuf As LongPtr = 0) As Long
+    Private Declare PtrSafe Sub GdiplusShutdown Lib "gdiplus" (ByVal token As LongPtr)
+    Private Declare PtrSafe Function GdipLoadImageFromFile Lib "gdiplus" (ByVal filename As LongPtr, ByRef image As LongPtr) As Long
+    Private Declare PtrSafe Function GdipDisposeImage Lib "gdiplus" (ByVal image As LongPtr) As Long
+    Private Declare PtrSafe Function GdipGetImageWidth Lib "gdiplus" (ByVal image As LongPtr, ByRef width As Long) As Long
+    Private Declare PtrSafe Function GdipGetImageHeight Lib "gdiplus" (ByVal image As LongPtr, ByRef height As Long) As Long
+    Private Declare PtrSafe Function GdipCreateBitmapFromScan0 Lib "gdiplus" (ByVal width As Long, ByVal height As Long, ByVal stride As Long, ByVal format As Long, ByVal scan0 As LongPtr, ByRef bitmap As LongPtr) As Long
+    Private Declare PtrSafe Function GdipGetImageGraphicsContext Lib "gdiplus" (ByVal image As LongPtr, ByRef graphics As LongPtr) As Long
+    Private Declare PtrSafe Function GdipDeleteGraphics Lib "gdiplus" (ByVal graphics As LongPtr) As Long
+    Private Declare PtrSafe Function GdipSetInterpolationMode Lib "gdiplus" (ByVal graphics As LongPtr, ByVal Mode As Long) As Long
+    Private Declare PtrSafe Function GdipDrawImageRectI Lib "gdiplus" (ByVal graphics As LongPtr, ByVal image As LongPtr, ByVal x As Long, ByVal y As Long, ByVal width As Long, ByVal height As Long) As Long
+    Private Declare PtrSafe Function GdipSaveImageToFile Lib "gdiplus" (ByVal image As LongPtr, ByVal filename As LongPtr, ByRef clsidEncoder As GUID, ByVal encoderParams As LongPtr) As Long
+    Private Declare PtrSafe Function CLSIDFromString Lib "ole32" (ByVal lpsz As LongPtr, ByRef pclsid As GUID) As Long
 #Else
     ' 32bit Office
     Private Declare Function GetSysColor Lib "user32" (ByVal nIndex As Long) As Long
+    
+    Private Declare Function GdiplusStartup Lib "gdiplus" (ByRef token As Long, ByRef inputbuf As GDIPlusStartupInput, Optional ByVal outputbuf As Long = 0) As Long
+    Private Declare Sub GdiplusShutdown Lib "gdiplus" (ByVal token As Long)
+    Private Declare Function GdipLoadImageFromFile Lib "gdiplus" (ByVal filename As Long, ByRef image As Long) As Long
+    Private Declare Function GdipDisposeImage Lib "gdiplus" (ByVal image As Long) As Long
+    Private Declare Function GdipGetImageWidth Lib "gdiplus" (ByVal image As Long, ByRef width As Long) As Long
+    Private Declare Function GdipGetImageHeight Lib "gdiplus" (ByVal image As Long, ByRef height As Long) As Long
+    Private Declare Function GdipCreateBitmapFromScan0 Lib "gdiplus" (ByVal width As Long, ByVal height As Long, ByVal stride As Long, ByVal format As Long, ByVal scan0 As Long, ByRef bitmap As Long) As Long
+    Private Declare Function GdipGetImageGraphicsContext Lib "gdiplus" (ByVal image As Long, ByRef graphics As Long) As Long
+    Private Declare Function GdipDeleteGraphics Lib "gdiplus" (ByVal graphics As Long) As Long
+    Private Declare Function GdipSetInterpolationMode Lib "gdiplus" (ByVal graphics As Long, ByVal Mode As Long) As Long
+    Private Declare Function GdipDrawImageRectI Lib "gdiplus" (ByVal graphics As Long, ByVal image As Long, ByVal x As Long, ByVal y As Long, ByVal width As Long, ByVal height As Long) As Long
+    Private Declare Function GdipSaveImageToFile Lib "gdiplus" (ByVal image As Long, ByVal filename As Long, ByRef clsidEncoder As GUID, ByVal encoderParams As Long) As Long
+    Private Declare Function CLSIDFromString Lib "ole32" (ByVal lpsz As Long, ByRef pclsid As GUID) As Long
 #End If
 
+Private Type GDIPlusStartupInput: GdiPlusVersion As Long: DebugEventCallback As LongPtr: SuppressBackgroundThread As Long: SuppressExternalCodecs As Long: End Type
+Private Type GUID: Data1 As Long: Data2 As Integer: Data3 As Integer: Data4(0 To 7) As Byte: End Type
+
 Private Const FORM_WINDOW_NAME As String = "window"
+Private Const OUTPUT_FOLDER_NAME As String = "VBAForm2PS_output"
 
 Public Sub TestRunConversion2PS()
     Call ConvertForm2PS(UserForm1)
@@ -31,7 +72,7 @@ Public Sub TestRunConversion2PS_3()
     Call ConvertForm2PS(UserForm1, saveAsBat:=True, useCls:=True)
 End Sub
 
-Public Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boolean = False, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False)
+Public Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boolean = False, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False, Optional ByVal imageMode As String = "file")
     
     ' frms: Variant
     '   Accepts a single UserForm object or an Array of UserForm objects to be converted.
@@ -42,17 +83,23 @@ Public Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boo
     '   This is automatically set to True if frms is an array.
     ' noMainLoop: Boolean
     '   If set to True, the .ShowDialog() call will be omitted from the end of the generated PowerShell script.
+    ' imageMode: String
+    '   Determines how image files used in the UserForm are handled during conversion. You can choose one of the following options:
+    '     "file" (Default): Images are saved as separate external files in the output directory, and the generated code references these files.
+    '     "disabled": Image processing is disabled, and no image-related code is generated.
+    '     "reference-only": Similar to "file", generates code that references image files, but does not export the image files. Useful when the image files already exist.
+    '     "base64": Images are embedded directly into the generated code as Base64-encoded strings, keeping everything in a single file.
+    '     "base64-dict": Images are embedded as Base64 strings within a Hashtable inside the generated code.
+    '     "base64-json": Images are stored in an external image_base64.json file as Base64 strings, and the generated code references the JSON file.
+    '     "base64-json-reference": Similar to "base64-json", generates code that references image_base64.json, but does not export the JSON file. Useful when the JSON file already exists.
     
     Dim code As String
     Dim filePath As String
     Dim saveDir As String
-    code = GeneratePSWinFormsCode(frms, useCls, noMainLoop)
+    code = GeneratePSWinFormsCode(frms, useCls, noMainLoop, imageMode)
     If code <> "" Then
-        If ThisWorkbook.Path = "" Then
-            saveDir = "C:"
-        Else
-            saveDir = ThisWorkbook.Path
-        End If
+        saveDir = GetSaveDirPath()
+        Call CreateFolderIfDoesNotExist(saveDir)
         If saveAsBat Then
             code = GenerateBatchCode() & vbLf & vbLf & code
             filePath = saveDir & "\output.bat"
@@ -70,7 +117,7 @@ Public Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boo
 End Sub
 
 
-Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False) As String
+Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal useCls As Boolean = False, Optional ByVal noMainLoop As Boolean = False, Optional ByVal imageMode As String = "file") As String
     Dim root As Variant
     Dim indent As String
     Dim prefix As String
@@ -109,6 +156,31 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
     Dim nodeVarName As String
     Dim nodeParentVarName As String
     Dim enableScrollBar As Boolean
+    Dim hasPicture As Boolean
+    Dim tempPath As String
+    Dim picturePath As String
+    Dim pictureName As String
+    Dim saveDir As String
+    Dim uniqueStringToReplace As String
+    Dim base64PictureDictStr As String
+    Dim base64PictureDictStrs As New Collection
+    Dim base64PictureJsonStr As String
+    Dim base64PictureJsonStrs As New Collection
+    Dim base64Str As String
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    Dim supportedImageModeValues() As Variant
+    
+    imageMode = LCase(imageMode)
+    supportedImageModeValues = Array("file", "disabled", "reference-only", "base64", "base64-dict", "base64-json", "base64-json-reference")
+    If Not ContainsValue(supportedImageModeValues, imageMode) Then
+        MsgBox "[imageMode] Invalid value: " & q & imageMode & q & vbLf & "Supported values are " & q & Join(supportedImageModeValues, q & ", " & q) & q
+        GeneratePSWinFormsCode = ""
+        Exit Function
+    End If
+    
+    saveDir = GetSaveDirPath()
+    Call CreateFolderIfDoesNotExist(saveDir)
     
     r = ""
     
@@ -131,9 +203,22 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
     r = r & "Add-Type -AssemblyName System.Drawing" & vbLf
     r = r & "[System.Windows.Forms.Application]::EnableVisualStyles()" & vbLf
     r = r & vbLf
+    r = r & "If ($PSScriptRoot -eq """") {$BASE_DIR = (Get-Location).Path} else {$BASE_DIR = $PSScriptRoot}" & vbLf
+    
+    uniqueStringToReplace = GenerateUUIDv4() & GenerateUUIDv4() & GenerateUUIDv4() & GenerateUUIDv4()
+    r = r & "" & vbLf
+    r = r & uniqueStringToReplace
+    
+    If ContainsValue(Array("base64-json", "base64-json-reference"), imageMode) Then
+        r = r & "$image_base64_dict = @{}" & vbLf
+        r = r & "$image_base64_json_obj = [System.IO.File]::ReadAllText(""image_base64.json"", [System.Text.Encoding]::UTF8) | ConvertFrom-Json" & vbLf
+        r = r & "$image_base64_json_obj.PSObject.Properties | ForEach-Object {" & vbLf
+        r = r & "    $image_base64_dict[$_.Name] = $_.Value" & vbLf
+        r = r & "}" & vbLf & vbLf
+    End If
     
     For Each root In frms
-        unavailableNames = VBA.Array("", "System", "item", "row")
+        unavailableNames = VBA.Array("", "System", "item", "row", "image_base64_dict", "base_dir")
         
         For i = LBound(unavailableNames) To UBound(unavailableNames)
             unavailableNames(i) = LCase(unavailableNames(i))
@@ -231,13 +316,21 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
             
             pixelLeft = UserFormSizeToPixel(ctrl.Left)
             pixelTop = UserFormSizeToPixel(ctrl.Top)
-            pixelWidth = UserFormSizeToPixel(ctrl.Width)
-            pixelHeight = UserFormSizeToPixel(ctrl.Height)
+            pixelWidth = UserFormSizeToPixel(ctrl.width)
+            pixelHeight = UserFormSizeToPixel(ctrl.height)
             
             controlVarName = GenerateCtrlVarName(ctrl, prefix, useCls)
             parentVarName = GenerateCtrlVarName(ctrl.Parent, prefix, useCls)
             itemsListName = controlVarName & "_items_value"
             enableScrollBar = False
+            hasPicture = False
+            base64Str = ""
+            
+            If useCls Then
+                pictureName = "img_" & root.Name & "_" & ctrl.Name
+            Else
+                pictureName = "img_" & ctrl.Name
+            End If
             
             r = r & indent & controlVarName & " = " & "New-Object" & " " & widgetType & vbLf
             r = r & indent & parentVarName & ".Controls.Add(" & controlVarName & ")" & vbLf
@@ -493,8 +586,59 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                         picSizeMode = "Zoom"
                 End Select
                 
-                r = r & indent & "#" & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile(" & q & "C:\path\to\your\image.png" & q & ")" & vbLf
-                r = r & indent & "#" & controlVarName & ".SizeMode = " & q & picSizeMode & q & vbLf
+                If ctrl.Picture Is Nothing Or imageMode = "disabled" Then
+                    hasPicture = False
+                Else
+                    hasPicture = True
+                End If
+                
+                If hasPicture Then
+                    
+                    tempPath = fso.BuildPath(fso.GetSpecialFolder(2).Path, fso.GetTempName())
+                    
+                    If ContainsValue(Array("base64", "base64-dict", "base64-json"), imageMode) Then
+                        picturePath = tempPath & "tmp2.png"
+                    Else
+                        picturePath = saveDir & "\" & pictureName & ".png"
+                    End If
+                    
+                    tempPath = tempPath & ".bmp"
+                    
+                    If ContainsValue(Array("file", "base64", "base64-dict", "base64-json"), imageMode) Then
+                        Call SavePicture(ctrl.Picture, tempPath)
+                        Call ConvertImageFormat(tempPath, picturePath, False)
+                        If fso.FileExists(tempPath) Then Call fso.DeleteFile(tempPath)
+                    End If
+                    
+                    
+                    If ContainsValue(Array("base64", "base64-dict", "base64-json"), imageMode) Then
+                        base64Str = FileToBase64(picturePath)
+                        base64PictureDictStrs.Add "    " & q & pictureName & q & " = " & q & base64Str & q
+                        base64PictureJsonStrs.Add "    " & q & pictureName & q & ": " & q & base64Str & q
+                        If fso.FileExists(picturePath) Then Call fso.DeleteFile(picturePath)
+                    End If
+                    
+                    If ContainsValue(Array("base64-dict", "base64-json", "base64-json-reference"), imageMode) Then
+                        If useCls Then
+                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & "(Get-Variable image_base64_dict).Value[" & q & pictureName & q & "]" & "))))" & vbLf
+                        Else
+                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & "$image_base64_dict[" & q & pictureName & q & "]" & "))))" & vbLf
+                        End If
+                    ElseIf imageMode = "base64" Then
+                        r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & q & base64Str & q & "))))" & vbLf
+                    ElseIf ContainsValue(Array("file", "reference-only"), imageMode) Then
+                        If useCls Then
+                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile((Join-Path (Get-Variable BASE_DIR).Value " & q & fso.GetFileName(picturePath) & q & "))" & vbLf
+                        Else
+                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile((Join-Path $BASE_DIR " & q & fso.GetFileName(picturePath) & q & "))" & vbLf
+                        End If
+                    End If
+                    
+                    r = r & indent & "" & controlVarName & ".SizeMode = " & q & picSizeMode & q & vbLf
+                Else
+                    r = r & indent & "#" & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile(" & q & "C:\path\to\your\image.png" & q & ")" & vbLf
+                    r = r & indent & "#" & controlVarName & ".SizeMode = " & q & picSizeMode & q & vbLf
+                End If
             End If
             
             r = r & vbLf
@@ -530,8 +674,56 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
         Next
     End If
     
+    
+    If imageMode = "base64-dict" Then
+        base64PictureDictStr = "@{" & vbLf & Join(Collection2Array(base64PictureDictStrs), vbLf) & vbLf & "}" & vbLf
+        r = VBA.Replace(r, uniqueStringToReplace, "$image_base64_dict = " & base64PictureDictStr & vbLf)
+    Else
+        r = VBA.Replace(r, uniqueStringToReplace, "")
+    End If
+    
+    If imageMode = "base64-json" Then
+        base64PictureJsonStr = "{" & vbLf & Join(Collection2Array(base64PictureJsonStrs), "," & vbLf) & vbLf & "}" & vbLf
+        Call SaveUTF8Text_NoBOM(saveDir & "\" & "image_base64.json", base64PictureJsonStr)
+    End If
+
+    
     GeneratePSWinFormsCode = r
 End Function
+
+Private Function GetSaveDirPath() As String
+    Dim result As String
+    Dim wsh As Object
+    result = ""
+    On Error Resume Next
+    result = CallByName(Application, "ThisWorkbook", VbGet).Path ' Excel VBA
+    result = CallByName(Application, "MacroContainer", VbGet).Path ' Word VBA
+    On Error GoTo 0
+    
+    If result = "" Then ' Other Office / Unsaved Workbook
+        On Error Resume Next
+        Set wsh = CreateObject("WScript.Shell")
+        result = wsh.SpecialFolders("MyDocuments")
+        On Error GoTo 0
+    End If
+    
+    If result = "" Then ' If fail to retrieve the path to the Documents folder
+        result = "C:"
+    End If
+    
+    result = result & "\" & OUTPUT_FOLDER_NAME
+    GetSaveDirPath = result
+End Function
+
+Private Sub CreateFolderIfDoesNotExist(ByVal folderPath As String)
+    Dim fso As Object
+    Set fso = CreateObject("Scripting.FileSystemObject")
+
+    If Not fso.FolderExists(folderPath) Then
+        Call fso.CreateFolder(folderPath)
+    End If
+    
+End Sub
 
 Private Function GenerateCtrlVarName(ByVal ctrl As Object, ByVal prefix As String, ByVal useCls As Boolean) As String
     ' Generates a valid, unique identifier for a control in the target language.
@@ -694,7 +886,7 @@ Private Function GetWinFormsControlName(ByVal ctrl As Object) As String
         Case "ScrollBar"
             Select Case ctrl.orientation
                 Case fmOrientationAuto
-                    If ctrl.Width > ctrl.Height Then
+                    If ctrl.width > ctrl.height Then
                         r = "HScrollBar"
                     Else
                         r = "VScrollBar"
@@ -870,7 +1062,7 @@ Private Function DefineListViewColumns(ByVal ctrl As Object, ByVal indent As Str
         colVarName = controlVarName & "_col" & i
         headerText = Convert2PowerShellFormatText(item.text)
         colAlign = GetPSWinFormsListViewAlignment(item)
-        colWidth = UserFormSizeToPixel(item.Width)
+        colWidth = UserFormSizeToPixel(item.width)
         r = r & indent & colVarName & " = " & "New-Object System.Windows.Forms.ColumnHeader" & vbLf
         r = r & indent & colVarName & ".Text = " & q & headerText & q & vbLf
         r = r & indent & colVarName & ".Width = " & colWidth & vbLf
@@ -1081,6 +1273,214 @@ Private Function FormColorToHex(ByVal clr As Long) As String
                      Right("0" & Hex(b), 2)
 End Function
 
+Private Sub ConvertImageFormat(ByVal srcPath As String, ByVal dstPath As String, _
+    Optional ByVal resize As Boolean = False, _
+    Optional ByVal dstWidth As Long = -1, _
+    Optional ByVal dstHeight As Long = -1, _
+    Optional ByVal preserveAspectRatio As Boolean = False)
+    
+    '----------------------------------------------------------------------------------------------------
+    ' Converts an image file to a specified output format and optionally resizes the image before saving.
+    ' Uses GDI+ API without relying on WIA components (for compatibility with older versions of Windows).
+    '
+    ' Parameters:
+    '   srcPath              - Full path of the source image file.
+    '   dstPath              - Full path of the destination image file. Output format is
+    '                          determined by the file extension (.png, .jpg, .jpeg, .bmp, .gif).
+    '   resize               - If True, resizes the image before conversion.
+    '                          Default: False.
+    '   dstWidth             - Target width for resizing in pixels.
+    '                          If -1, uses the original image width.
+    '                          Default: -1.
+    '   dstHeight            - Target height for resizing in pixels.
+    '                          If -1, uses the original image height.
+    '                          Default: -1.
+    '   preserveAspectRatio  - If True, maintains the original aspect ratio during resizing.
+    '                          Default: False.
+    '
+    '
+    ' Supported Formats:
+    '   PNG (.png)
+    '   JPEG (.jpg, .jpeg)
+    '   BMP (.bmp)
+    '   GIF (.gif)
+    '
+    ' Errors:
+    '   Raises Error if the destination file extension is not supported.
+    '
+    '----------------------------------------------------------------------------------------------------
+    
+    Const PixelFormat32bppARGB As Long = &H26200A
+    Const InterpolationModeHighQualityBicubic As Long = 7
+    
+    ' Encoder CLSID Constants
+    Const CLSID_BMP As String = "{557CF400-1A04-11D3-9A73-0000F81EF32E}"
+    Const CLSID_JPG As String = "{557CF401-1A04-11D3-9A73-0000F81EF32E}"
+    Const CLSID_GIF As String = "{557CF402-1A04-11D3-9A73-0000F81EF32E}"
+    Const CLSID_PNG As String = "{557CF406-1A04-11D3-9A73-0000F81EF32E}"
+    
+    Dim fso As Object
+    Dim ext As String
+    Dim encoderCLSID As String
+    
+    ' Determine output format by file extension
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    ext = LCase(fso.GetExtensionName(dstPath))
+    
+    Select Case ext
+        Case "png"
+            encoderCLSID = CLSID_PNG
+        Case "jpg", "jpeg"
+            encoderCLSID = CLSID_JPG
+        Case "bmp"
+            encoderCLSID = CLSID_BMP
+        Case "gif"
+            encoderCLSID = CLSID_GIF
+        Case Else
+            Err.Raise Number:=513, Description:="[ConvertImageFormat] [dstPath] Invalid Extension (." & ext & ")"
+    End Select
+    
+    ' Initialize GDI+
+    Dim gsi As GDIPlusStartupInput
+    Dim token As LongPtr
+    gsi.GdiPlusVersion = 1
+    If GdiplusStartup(token, gsi) <> 0 Then
+        Err.Raise Number:=514, Description:="[ConvertImageFormat] Failed to initialize GDI+"
+    End If
+    
+    On Error GoTo CleanUp
+    
+    ' Load source image
+    Dim hSrcImage As LongPtr
+    If GdipLoadImageFromFile(StrPtr(srcPath), hSrcImage) <> 0 Then
+        Err.Raise Number:=515, Description:="[ConvertImageFormat] Failed to load source image: " & srcPath
+    End If
+    
+    ' Get original dimensions
+    Dim origWidth As Long, origHeight As Long
+    GdipGetImageWidth hSrcImage, origWidth
+    GdipGetImageHeight hSrcImage, origHeight
+    
+    ' Determine target dimensions
+    Dim targetW As Long, targetH As Long
+    targetW = IIf(dstWidth = -1, origWidth, dstWidth)
+    targetH = IIf(dstHeight = -1, origHeight, dstHeight)
+    
+    ' Calculate aspect-ratio adjusted dimensions if required
+    Dim finalW As Long, finalH As Long
+    If resize And preserveAspectRatio Then
+        Dim scaleW As Double, scaleH As Double, scaleFactor As Double
+        scaleW = CDbl(targetW) / CDbl(origWidth)
+        scaleH = CDbl(targetH) / CDbl(origHeight)
+        
+        ' Calculate ratio based on min(scaleW, scaleH) when preserving aspect ratio
+        If scaleW < scaleH Then
+            scaleFactor = scaleW
+        Else
+            scaleFactor = scaleH
+        End If
+        
+        finalW = CLng(origWidth * scaleFactor)
+        finalH = CLng(origHeight * scaleFactor)
+        If finalW < 1 Then finalW = 1
+        If finalH < 1 Then finalH = 1
+    ElseIf resize Then
+        finalW = targetW
+        finalH = targetH
+    Else
+        finalW = origWidth
+        finalH = origHeight
+    End If
+    
+    ' Create new bitmap and draw resized image if necessary or convert directly
+    Dim hDstBitmap As LongPtr
+    Dim hGraphics As LongPtr
+    
+    If resize Or (finalW <> origWidth Or finalH <> origHeight) Then
+        GdipCreateBitmapFromScan0 finalW, finalH, 0, PixelFormat32bppARGB, 0, hDstBitmap
+        GdipGetImageGraphicsContext hDstBitmap, hGraphics
+        GdipSetInterpolationMode hGraphics, InterpolationModeHighQualityBicubic
+        GdipDrawImageRectI hGraphics, hSrcImage, 0, 0, finalW, finalH
+    Else
+        hDstBitmap = hSrcImage
+    End If
+    
+    ' Prepare Encoder CLSID
+    Dim tCLSID As GUID
+    CLSIDFromString StrPtr(encoderCLSID), tCLSID
+    
+    ' Save image using temporary file pattern
+    Dim tmpPath As String
+    tmpPath = dstPath & ".tmp"
+    
+    If fso.FileExists(tmpPath) Then fso.DeleteFile tmpPath
+    
+    Dim status As Long
+    status = GdipSaveImageToFile(hDstBitmap, StrPtr(tmpPath), tCLSID, 0)
+    
+    ' Clean up GDI+ image resources prior to moving file
+    If hGraphics <> 0 Then GdipDeleteGraphics hGraphics
+    If hDstBitmap <> 0 And hDstBitmap <> hSrcImage Then GdipDisposeImage hDstBitmap
+    If hSrcImage <> 0 Then GdipDisposeImage hSrcImage
+    
+    hGraphics = 0
+    hDstBitmap = 0
+    hSrcImage = 0
+    
+    If status <> 0 Then
+        If fso.FileExists(tmpPath) Then fso.DeleteFile tmpPath
+        Err.Raise Number:=516, Description:="[ConvertImageFormat] Failed to save output image."
+    End If
+    
+    ' Overwrite target file
+    If fso.FileExists(dstPath) Then fso.DeleteFile dstPath
+    fso.MoveFile tmpPath, dstPath
+
+CleanUp:
+    ' Ensure GDI+ resources are freed
+    If hGraphics <> 0 Then GdipDeleteGraphics hGraphics
+    If hDstBitmap <> 0 And hDstBitmap <> hSrcImage Then GdipDisposeImage hDstBitmap
+    If hSrcImage <> 0 Then GdipDisposeImage hSrcImage
+    If token <> 0 Then GdiplusShutdown token
+    
+    If Err.Number <> 0 Then
+        Dim errNum As Long, errDesc As String
+        errNum = Err.Number
+        errDesc = Err.Description
+        Err.Raise errNum, Description:=errDesc
+    End If
+End Sub
+
+
+Private Function FileToBase64(ByVal filePath As String) As String
+    Dim stream As Object
+    Dim xml As Object
+    Dim node As Object
+    
+
+    ' Load file as binary
+    Set stream = CreateObject("ADODB.Stream")
+    stream.Type = 1 ' binary
+    stream.Open
+    stream.LoadFromFile filePath
+
+    ' Convert binary to Base64
+    Set xml = CreateObject("MSXML2.DOMDocument")
+    Set node = xml.createElement("base64")
+
+    node.DataType = "bin.base64"
+    node.nodeTypedValue = stream.Read
+
+    ' Remove line breaks
+    FileToBase64 = VBA.Replace(node.text, vbLf, "")
+    FileToBase64 = VBA.Replace(FileToBase64, vbCr, "")
+
+    stream.Close
+    Set node = Nothing
+    Set xml = Nothing
+    Set stream = Nothing
+
+End Function
 
 Private Function ContainsValue(ByVal itemList As Variant, ByVal value As Variant) As Boolean
     ' Check if a specific value exists in Array/Collection/Dictionary
