@@ -10,6 +10,8 @@ This program converts userforms created in Microsoft Office VBA into PowerShell 
 - Supported OS: Windows XP or later
 - Required Software: Microsoft Excel/Word/PowerPoint/Outlook 2000 or later
 - Recommended Environment: Microsoft Excel 2016 or later
+> Note:  
+> PowerShell 5.1 or later is required to run the generated code.
 
 ## Verified Operating Environments
 - Windows XP(SP3)

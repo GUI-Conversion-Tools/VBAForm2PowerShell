@@ -10,6 +10,8 @@
 - 対応OS: Windows XP以上
 - 必要ソフトウェア: Microsoft Excel/Word/PowerPoint/Outlook 2000以降
 - 推奨環境: Microsoft Excel 2016以降
+> Note:  
+> 生成されたコードを実行するには、PowerShell 5.1以降が必要です
 
 ## 動作確認済環境
 - Windows XP(SP3) 
