@@ -1,6 +1,6 @@
 Attribute VB_Name = "VBAForm2PowerShell"
 
-' VBAForm2PowerShell v1.3.0
+' VBAForm2PowerShell v1.3.1
 ' https://github.com/GUI-Conversion-Tools/VBAForm2PowerShell
 ' Copyright (c) 2025-2026 ZeeZeX
 ' This software is released under the MIT License.
@@ -103,10 +103,10 @@ Public Sub ConvertForm2PS(ByVal frms As Variant, Optional ByVal saveAsBat As Boo
         If saveAsBat Then
             code = GenerateBatchCode() & vbLf & vbLf & code
             filePath = saveDir & "\output.bat"
-            Call SaveUTF8Text_NoBOM(filePath, code) 'Batch does not support UTF-8(BOM)
+            Call SaveUtf8TextNoBom(filePath, code) 'Batch does not support UTF-8(BOM)
         Else
             filePath = saveDir & "\output.ps1"
-            Call SaveUTF8BOMText(filePath, code) ' In PowerShell 5.1, .ps1 does not support UTF-8(NoBOM)
+            Call SaveUtf8TextWithBom(filePath, code) ' In PowerShell 5.1, .ps1 does not support UTF-8(NoBOM)
         End If
         
         MsgBox "Saved: " & filePath
@@ -133,7 +133,8 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
     Dim ctrl As MSForms.Control
     Dim ctrls As Collection
     Dim item As Variant
-    Dim r As String
+    Dim codeList As New Collection
+    Dim result As String
     Const q As String = """"
     Dim fontStyle As String
     Dim widgetType As String
@@ -182,8 +183,6 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
     saveDir = GetSaveDirPath()
     Call CreateFolderIfDoesNotExist(saveDir)
     
-    r = ""
-    
     If IsArray(frms) Then
         useCls = True
     Else
@@ -198,23 +197,23 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
         prefix = "$"
     End If
     
-    r = r & "$ErrorActionPreference = 'Stop'" & vbLf
-    r = r & "Add-Type -AssemblyName System.Windows.Forms" & vbLf
-    r = r & "Add-Type -AssemblyName System.Drawing" & vbLf
-    r = r & "[System.Windows.Forms.Application]::EnableVisualStyles()" & vbLf
-    r = r & vbLf
-    r = r & "If ($PSScriptRoot -eq """") {$BASE_DIR = (Get-Location).Path} else {$BASE_DIR = $PSScriptRoot}" & vbLf
+    codeList.Add "$ErrorActionPreference = 'Stop'" & vbLf
+    codeList.Add "Add-Type -AssemblyName System.Windows.Forms" & vbLf
+    codeList.Add "Add-Type -AssemblyName System.Drawing" & vbLf
+    codeList.Add "[System.Windows.Forms.Application]::EnableVisualStyles()" & vbLf
+    codeList.Add vbLf
+    codeList.Add "If ($PSScriptRoot -eq """") {$BASE_DIR = (Get-Location).Path} else {$BASE_DIR = $PSScriptRoot}" & vbLf
     
     uniqueStringToReplace = GenerateUUIDv4() & GenerateUUIDv4() & GenerateUUIDv4() & GenerateUUIDv4()
-    r = r & "" & vbLf
-    r = r & uniqueStringToReplace
+    codeList.Add "" & vbLf
+    codeList.Add uniqueStringToReplace
     
     If ContainsValue(Array("base64-json", "base64-json-reference"), imageMode) Then
-        r = r & "$image_base64_dict = @{}" & vbLf
-        r = r & "$image_base64_json_obj = [System.IO.File]::ReadAllText(""image_base64.json"", [System.Text.Encoding]::UTF8) | ConvertFrom-Json" & vbLf
-        r = r & "$image_base64_json_obj.PSObject.Properties | ForEach-Object {" & vbLf
-        r = r & "    $image_base64_dict[$_.Name] = $_.Value" & vbLf
-        r = r & "}" & vbLf & vbLf
+        codeList.Add "$image_base64_dict = @{}" & vbLf
+        codeList.Add "$image_base64_json_obj = [System.IO.File]::ReadAllText(""image_base64.json"", [System.Text.Encoding]::UTF8) | ConvertFrom-Json" & vbLf
+        codeList.Add "$image_base64_json_obj.PSObject.Properties | ForEach-Object {" & vbLf
+        codeList.Add "    $image_base64_dict[$_.Name] = $_.Value" & vbLf
+        codeList.Add "}" & vbLf & vbLf
     End If
     
     For Each root In frms
@@ -226,8 +225,8 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
         
         If ContainsValue(unavailableNames, LCase(root.Name)) Then
             MsgBox GenerateUnavailableNameMessage(root)
-            r = ""
-            GeneratePSWinFormsCode = r
+            result = ""
+            GeneratePSWinFormsCode = result
             Exit Function
         End If
         unavailableNames(0) = LCase(FORM_WINDOW_NAME)
@@ -245,19 +244,19 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
         Set ctrls = SortFormControlsByDepth(ctrls)
         
         If useCls Then
-            r = r & "class " & root.Name & "{" & vbLf
+            codeList.Add "class " & root.Name & "{" & vbLf
             ' Declare instance variables
-            r = r & "    " & "[object]$" & FORM_WINDOW_NAME & vbLf
+            codeList.Add "    " & "[object]$" & FORM_WINDOW_NAME & vbLf
             For Each ctrl In ctrls
-                r = r & "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & vbLf
+                codeList.Add "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & vbLf
                 If ContainsValue(Array("ComboBox", "ListBox"), TypeName(ctrl)) Or IsListView(ctrl) Then
                     itemsListName = GenerateCtrlVarName(ctrl, "$", False) & "_items_value"
-                    r = r & "    " & "[object]" & itemsListName & vbLf
+                    codeList.Add "    " & "[object]" & itemsListName & vbLf
                 End If
                 
                 If TypeName(ctrl) = "MultiPage" Then
                     For Each item In ctrl.Pages
-                        r = r & "    " & "[object]" & GenerateCtrlVarName(item, "$", False) & vbLf
+                        codeList.Add "    " & "[object]" & GenerateCtrlVarName(item, "$", False) & vbLf
                     Next
                 End If
                 
@@ -266,49 +265,49 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                     i = 0
                     For Each item In objHeaders
                         i = i + 1
-                        r = r & "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & "_col" & i & vbLf
+                        codeList.Add "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & "_col" & i & vbLf
                     Next
                 End If
                 
                 If IsTreeView(ctrl) Then
-                    r = r & "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & "_node_dict" & vbLf
+                    codeList.Add "    " & "[object]" & GenerateCtrlVarName(ctrl, "$", False) & "_node_dict" & vbLf
                 End If
                 
             Next
-            r = r & "    " & root.Name & "() {" & vbLf
+            codeList.Add "    " & root.Name & "() {" & vbLf
         End If
         
-        r = r & indent & formName & " = " & "New-Object System.Windows.Forms.Form" & vbLf
+        codeList.Add indent & formName & " = " & "New-Object System.Windows.Forms.Form" & vbLf
         
         caption = root.caption
         caption = Convert2PowerShellFormatText(caption)
-        r = r & indent & formName & ".Text = " & q & caption & q & vbLf
-        r = r & indent & formName & ".ClientSize = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
-        r = r & indent & formName & ".MaximizeBox = $false" & vbLf
-        r = r & indent & formName & ".FormBorderStyle = " & q & "FixedSingle" & q & vbLf  ' Disable window resizing
-        r = r & indent & formName & ".BackColor = " & q & FormColorToHex(root.BackColor) & q & vbLf
-        r = r & indent & formName & ".AutoScaleMode = " & q & "None" & q & vbLf
+        codeList.Add indent & formName & ".Text = " & q & caption & q & vbLf
+        codeList.Add indent & formName & ".ClientSize = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
+        codeList.Add indent & formName & ".MaximizeBox = $false" & vbLf
+        codeList.Add indent & formName & ".FormBorderStyle = " & q & "FixedSingle" & q & vbLf  ' Disable window resizing
+        codeList.Add indent & formName & ".BackColor = " & q & FormColorToHex(root.BackColor) & q & vbLf
+        codeList.Add indent & formName & ".AutoScaleMode = " & q & "None" & q & vbLf
         
         
         cursorType = GetControlCursorType(root)
         If cursorType <> "" Then
-            r = r & indent & formName & ".Cursor = " & q & cursorType & q & vbLf
+            codeList.Add indent & formName & ".Cursor = " & q & cursorType & q & vbLf
         End If
         
-        r = r & vbLf
+        codeList.Add vbLf
 
         For Each ctrl In ctrls
             If GetWinFormsControlName(ctrl) = "" Then
                 MsgBox GenerateUnsupportedControlMessage(ctrl)
-                r = ""
-                GeneratePSWinFormsCode = r
+                result = ""
+                GeneratePSWinFormsCode = result
                 Exit Function
             End If
             
             If ContainsValue(unavailableNames, LCase(ctrl.Name)) Then
                 MsgBox GenerateUnavailableNameMessage(ctrl)
-                r = ""
-                GeneratePSWinFormsCode = r
+                result = ""
+                GeneratePSWinFormsCode = result
                 Exit Function
             End If
             
@@ -332,14 +331,14 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                 pictureName = "img_" & ctrl.Name
             End If
             
-            r = r & indent & controlVarName & " = " & "New-Object" & " " & widgetType & vbLf
-            r = r & indent & parentVarName & ".Controls.Add(" & controlVarName & ")" & vbLf
-            r = r & indent & controlVarName & ".Location = New-Object System.Drawing.Point(" & pixelLeft & ", " & pixelTop & ")" & vbLf
-            r = r & indent & controlVarName & ".Size = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
+            codeList.Add indent & controlVarName & " = " & "New-Object" & " " & widgetType & vbLf
+            codeList.Add indent & parentVarName & ".Controls.Add(" & controlVarName & ")" & vbLf
+            codeList.Add indent & controlVarName & ".Location = New-Object System.Drawing.Point(" & pixelLeft & ", " & pixelTop & ")" & vbLf
+            codeList.Add indent & controlVarName & ".Size = New-Object System.Drawing.Size(" & pixelWidth & ", " & pixelHeight & ")" & vbLf
             
             If GetWinFormsControlName(ctrl) = "GroupBox" Or ContainsValue(Array("Label", "CommandButton", "TextBox", "SpinButton", "ListBox", "CheckBox", "ToggleButton", "OptionButton", "ComboBox"), TypeName(ctrl)) Or IsListView(ctrl) Then
                 ' Set ForeColor
-                r = r & indent & controlVarName & ".ForeColor = " & q & FormColorToHex(ctrl.ForeColor) & q & vbLf
+                codeList.Add indent & controlVarName & ".ForeColor = " & q & FormColorToHex(ctrl.ForeColor) & q & vbLf
             End If
             
             If ContainsValue(Array("Label", "CommandButton", "Frame", "TextBox", "SpinButton", "ListBox", "CheckBox", "ToggleButton", "OptionButton", "Image", "ComboBox"), TypeName(ctrl)) Or IsListView(ctrl) Then
@@ -361,7 +360,7 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                         End If
                     End If
                 End If
-                r = r & indent & controlVarName & ".BackColor = " & colorSetting & vbLf
+                codeList.Add indent & controlVarName & ".BackColor = " & colorSetting & vbLf
                 
             End If
             
@@ -369,83 +368,83 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
             If GetWinFormsControlName(ctrl) = "GroupBox" Or ContainsValue(Array("Label", "CommandButton", "CheckBox", "ToggleButton", "OptionButton"), TypeName(ctrl)) Then
                 caption = ctrl.caption
                 caption = Convert2PowerShellFormatText(caption)
-                r = r & indent & controlVarName & ".Text = " & q & caption & q & vbLf
+                codeList.Add indent & controlVarName & ".Text = " & q & caption & q & vbLf
             End If
             
             If ContainsValue(Array("CheckBox", "OptionButton"), TypeName(ctrl)) Then
                 If ctrl.Alignment = fmAlignmentLeft Then
-                    r = r & indent & controlVarName & ".RightToLeft = " & q & "Yes" & q & vbLf
+                    codeList.Add indent & controlVarName & ".RightToLeft = " & q & "Yes" & q & vbLf
                 End If
             End If
             
             If TypeName(ctrl) = "ToggleButton" Then
-                r = r & indent & controlVarName & ".Appearance = " & q & "Button" & q & vbLf
-                r = r & indent & controlVarName & ".FlatStyle = " & q & "Flat" & q & vbLf
+                codeList.Add indent & controlVarName & ".Appearance = " & q & "Button" & q & vbLf
+                codeList.Add indent & controlVarName & ".FlatStyle = " & q & "Flat" & q & vbLf
             End If
             
             If TypeName(ctrl) = "CommandButton" Then
-                r = r & indent & controlVarName & ".FlatStyle = " & q & "Popup" & q & vbLf
+                codeList.Add indent & controlVarName & ".FlatStyle = " & q & "Popup" & q & vbLf
             End If
             
             If TypeName(ctrl) = "TextBox" Then
-                r = r & indent & controlVarName & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
-                r = r & indent & controlVarName & ".Multiline = " & "$" & LCase(CBool(ctrl.Multiline)) & vbLf
-                r = r & indent & controlVarName & ".WordWrap = " & "$" & LCase(CBool(ctrl.WordWrap)) & vbLf
+                codeList.Add indent & controlVarName & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
+                codeList.Add indent & controlVarName & ".Multiline = " & "$" & LCase(CBool(ctrl.Multiline)) & vbLf
+                codeList.Add indent & controlVarName & ".WordWrap = " & "$" & LCase(CBool(ctrl.WordWrap)) & vbLf
                 
                 If ctrl.PasswordChar <> "" Then
-                    r = r & indent & controlVarName & ".PasswordChar = " & q & Left(ctrl.PasswordChar, 1) & q & vbLf
+                    codeList.Add indent & controlVarName & ".PasswordChar = " & q & Left(ctrl.PasswordChar, 1) & q & vbLf
                 End If
                 
                 If ctrl.Locked Then
-                    r = r & indent & controlVarName & ".ReadOnly = " & "$true" & vbLf
+                    codeList.Add indent & controlVarName & ".ReadOnly = " & "$true" & vbLf
                 End If
                 
                 Select Case ctrl.ScrollBars
                     Case fmScrollBarsHorizontal
-                        r = r & indent & controlVarName & ".ScrollBars = " & q & "Horizontal" & q & vbLf
+                        codeList.Add indent & controlVarName & ".ScrollBars = " & q & "Horizontal" & q & vbLf
                     Case fmScrollBarsVertical
-                        r = r & indent & controlVarName & ".ScrollBars = " & q & "Vertical" & q & vbLf
+                        codeList.Add indent & controlVarName & ".ScrollBars = " & q & "Vertical" & q & vbLf
                     Case fmScrollBarsBoth
-                        r = r & indent & controlVarName & ".ScrollBars = " & q & "Both" & q & vbLf
+                        codeList.Add indent & controlVarName & ".ScrollBars = " & q & "Both" & q & vbLf
                 End Select
                 
             End If
             
             If TypeName(ctrl) = "ComboBox" Then
-                r = r & indent & itemsListName & " = " & GetListBoxValue(ctrl, indent) & vbLf
-                r = r & indent & controlVarName & ".Items.AddRange(" & itemsListName & ")" & vbLf
-                r = r & indent & controlVarName & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
+                codeList.Add indent & itemsListName & " = " & GetListBoxValue(ctrl, indent) & vbLf
+                codeList.Add indent & controlVarName & ".Items.AddRange(" & itemsListName & ")" & vbLf
+                codeList.Add indent & controlVarName & ".Text = " & q & Convert2PowerShellFormatText(ctrl.text) & q & vbLf
                 
                 If ctrl.Style = fmStyleDropDownList Then
-                    r = r & indent & controlVarName & ".DropDownStyle = " & q & "DropDownList" & q & vbLf
+                    codeList.Add indent & controlVarName & ".DropDownStyle = " & q & "DropDownList" & q & vbLf
                 End If
                 
                 If ctrl.Locked Then
-                    r = r & indent & controlVarName & ".Enabled = " & "$false" & vbLf
+                    codeList.Add indent & controlVarName & ".Enabled = " & "$false" & vbLf
                 End If
                 
             End If
             
             If TypeName(ctrl) = "ListBox" Then
-                r = r & indent & itemsListName & " = " & GetListBoxValue(ctrl, indent) & vbLf
-                r = r & indent & controlVarName & ".Items.AddRange(" & itemsListName & ")" & vbLf
+                codeList.Add indent & itemsListName & " = " & GetListBoxValue(ctrl, indent) & vbLf
+                codeList.Add indent & controlVarName & ".Items.AddRange(" & itemsListName & ")" & vbLf
                 
                 Select Case ctrl.MultiSelect
                     Case fmMultiSelectMulti
-                        r = r & indent & controlVarName & ".SelectionMode = " & q & "MultiSimple" & q & vbLf
+                        codeList.Add indent & controlVarName & ".SelectionMode = " & q & "MultiSimple" & q & vbLf
                     Case fmMultiSelectExtended
-                        r = r & indent & controlVarName & ".SelectionMode = " & q & "MultiExtended" & q & vbLf
+                        codeList.Add indent & controlVarName & ".SelectionMode = " & q & "MultiExtended" & q & vbLf
                 End Select
                 
                 If ctrl.Locked Then
-                    r = r & indent & controlVarName & ".Enabled = " & "$false" & vbLf
+                    codeList.Add indent & controlVarName & ".Enabled = " & "$false" & vbLf
                 End If
                 
             End If
             
             If TypeName(ctrl) = "ScrollBar" Then
-                r = r & indent & controlVarName & ".Minimum = " & ctrl.Min & vbLf
-                r = r & indent & controlVarName & ".Maximum = " & ctrl.Max & vbLf
+                codeList.Add indent & controlVarName & ".Minimum = " & ctrl.Min & vbLf
+                codeList.Add indent & controlVarName & ".Maximum = " & ctrl.Max & vbLf
             End If
             
             
@@ -465,23 +464,23 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                         tabPosition = "Top"
                 End Select
                 
-                r = r & indent & controlVarName & ".Alignment = " & q & tabPosition & q & vbLf
+                codeList.Add indent & controlVarName & ".Alignment = " & q & tabPosition & q & vbLf
                 
                 If ctrl.Style = fmTabStyleNone Then
-                    r = r & indent & controlVarName & ".Appearance = " & q & "FlatButtons" & q & vbLf
-                    r = r & indent & controlVarName & ".ItemSize = New-Object System.Drawing.Size(0, 1)" & vbLf
-                    r = r & indent & controlVarName & ".SizeMode = " & q & "Fixed" & q & vbLf
-                    r = r & indent & controlVarName & ".TabStop = " & "$false" & vbLf
+                    codeList.Add indent & controlVarName & ".Appearance = " & q & "FlatButtons" & q & vbLf
+                    codeList.Add indent & controlVarName & ".ItemSize = New-Object System.Drawing.Size(0, 1)" & vbLf
+                    codeList.Add indent & controlVarName & ".SizeMode = " & q & "Fixed" & q & vbLf
+                    codeList.Add indent & controlVarName & ".TabStop = " & "$false" & vbLf
                 End If
                 
                 For Each item In ctrl.Pages
                     childVarName = GenerateCtrlVarName(item, prefix, useCls)
                     caption = item.caption
                     caption = Convert2PowerShellFormatText(caption)
-                    r = r & indent & childVarName & " = New-Object System.Windows.Forms.TabPage" & vbLf
-                    r = r & indent & controlVarName & ".Controls.Add(" & childVarName & ")" & vbLf
-                    r = r & indent & childVarName & ".BackColor = " & q & FormColorToHex(&H8000000F) & q & vbLf
-                    r = r & indent & childVarName & ".Text = " & q & caption & q & vbLf
+                    codeList.Add indent & childVarName & " = New-Object System.Windows.Forms.TabPage" & vbLf
+                    codeList.Add indent & controlVarName & ".Controls.Add(" & childVarName & ")" & vbLf
+                    codeList.Add indent & childVarName & ".BackColor = " & q & FormColorToHex(&H8000000F) & q & vbLf
+                    codeList.Add indent & childVarName & ".Text = " & q & caption & q & vbLf
                 Next
             End If
             
@@ -505,42 +504,42 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                 
                 If fontStyle <> "" Then fontStyle = ", (" & fontStyle & ")"
                 
-                r = r & indent & controlVarName & ".Font = New-Object System.Drawing.Font(" & q & ctrl.Font.Name & q & ", " & Round(ctrl.Font.Size) & fontStyle & ")" & vbLf
+                codeList.Add indent & controlVarName & ".Font = New-Object System.Drawing.Font(" & q & ctrl.Font.Name & q & ", " & Round(ctrl.Font.Size) & fontStyle & ")" & vbLf
             End If
             
             
             If GetWinFormsControlName(ctrl) <> "GroupBox" And ContainsValue(Array("Frame", "TextBox", "Label", "ListBox", "Image"), TypeName(ctrl)) Then
                 ' WinForms' Combobox does not support customizing border style
-                r = r & indent & controlVarName & GetBorderSetting(ctrl, useCls) & vbLf
+                codeList.Add indent & controlVarName & GetBorderSetting(ctrl, useCls) & vbLf
             End If
             
             If ContainsValue(Array("Label", "TextBox", "CheckBox", "ToggleButton", "OptionButton"), TypeName(ctrl)) Then
-                r = r & indent & controlVarName & GetTextAlignSetting(ctrl, useCls) & vbLf
+                codeList.Add indent & controlVarName & GetTextAlignSetting(ctrl, useCls) & vbLf
             End If
             
             ' Set mouse cursor
             If TypeName(ctrl) <> "MultiPage" Then
                 cursorType = GetControlCursorType(ctrl)
                 If cursorType <> "" Then
-                    r = r & indent & controlVarName & ".Cursor = " & q & cursorType & q & vbLf
+                    codeList.Add indent & controlVarName & ".Cursor = " & q & cursorType & q & vbLf
                 End If
             End If
             
             
             If IsListView(ctrl) Then
-                r = r & indent & controlVarName & ".View = " & q & "Details" & q & vbLf
-                r = r & indent & controlVarName & ".FullRowSelect = " & "$true" & vbLf
-                r = r & indent & controlVarName & ".GridLines = " & "$true" & vbLf
-                r = r & indent & controlVarName & ".MultiSelect = " & "$" & LCase(CBool(ctrl.MultiSelect)) & vbLf
-                r = r & DefineListViewColumns(ctrl, indent, prefix, useCls) & vbLf
-                r = r & indent & itemsListName & " = " & GetListViewItems(ctrl, indent) & vbLf
-                r = r & indent & "foreach ($row in " & itemsListName & ") {" & vbLf
-                r = r & indent & "    $item = New-Object System.Windows.Forms.ListViewItem($row[0])" & vbLf
-                r = r & indent & "    for ($i = 1; $i -lt $row.Length; $i++) {" & vbLf
-                r = r & indent & "        [void]$item.SubItems.Add($row[$i])" & vbLf
-                r = r & indent & "    }" & vbLf
-                r = r & indent & "    [void]" & controlVarName & ".Items.Add($item)" & vbLf
-                r = r & indent & "}" & vbLf
+                codeList.Add indent & controlVarName & ".View = " & q & "Details" & q & vbLf
+                codeList.Add indent & controlVarName & ".FullRowSelect = " & "$true" & vbLf
+                codeList.Add indent & controlVarName & ".GridLines = " & "$true" & vbLf
+                codeList.Add indent & controlVarName & ".MultiSelect = " & "$" & LCase(CBool(ctrl.MultiSelect)) & vbLf
+                codeList.Add DefineListViewColumns(ctrl, indent, prefix, useCls) & vbLf
+                codeList.Add indent & itemsListName & " = " & GetListViewItems(ctrl, indent) & vbLf
+                codeList.Add indent & "foreach ($row in " & itemsListName & ") {" & vbLf
+                codeList.Add indent & "    $item = New-Object System.Windows.Forms.ListViewItem($row[0])" & vbLf
+                codeList.Add indent & "    for ($i = 1; $i -lt $row.Length; $i++) {" & vbLf
+                codeList.Add indent & "        [void]$item.SubItems.Add($row[$i])" & vbLf
+                codeList.Add indent & "    }" & vbLf
+                codeList.Add indent & "    [void]" & controlVarName & ".Items.Add($item)" & vbLf
+                codeList.Add indent & "}" & vbLf
             End If
             
             If IsTreeView(ctrl) Then
@@ -551,10 +550,10 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                 Else
                     enableScrollBar = True
                 End If
-                r = r & indent & controlVarName & ".Scrollable = " & "$" & LCase(CBool(enableScrollBar)) & vbLf
+                codeList.Add indent & controlVarName & ".Scrollable = " & "$" & LCase(CBool(enableScrollBar)) & vbLf
                 
                 Set treeviewNodes = GetAllTreeViewNodesBfs(ctrl)
-                r = r & indent & nodeDictName & " = @{}" & vbLf
+                codeList.Add indent & nodeDictName & " = @{}" & vbLf
                 For Each item In treeviewNodes
                     Set node = item(0)
                     nodeVarName = nodeDictName & "[" & q & Convert2PowerShellFormatText(node.Key) & q & "]"
@@ -563,9 +562,9 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                     Else
                         nodeParentVarName = nodeDictName & "[" & q & Convert2PowerShellFormatText(node.Parent.Key) & q & "]"
                     End If
-                    r = r & indent & nodeVarName & " = " & nodeParentVarName & ".Nodes.Add(" & q & Convert2PowerShellFormatText(node.text) & q & ")" & vbLf
+                    codeList.Add indent & nodeVarName & " = " & nodeParentVarName & ".Nodes.Add(" & q & Convert2PowerShellFormatText(node.text) & q & ")" & vbLf
                     If node.Expanded Then
-                        r = r & indent & nodeVarName & ".Expand() | Out-Null" & vbLf
+                        codeList.Add indent & nodeVarName & ".Expand() | Out-Null" & vbLf
                     End If
                 Next item
             End If
@@ -620,41 +619,41 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
                     
                     If ContainsValue(Array("base64-dict", "base64-json", "base64-json-reference"), imageMode) Then
                         If useCls Then
-                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & "(Get-Variable image_base64_dict).Value[" & q & pictureName & q & "]" & "))))" & vbLf
+                            codeList.Add indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & "(Get-Variable image_base64_dict).Value[" & q & pictureName & q & "]" & "))))" & vbLf
                         Else
-                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & "$image_base64_dict[" & q & pictureName & q & "]" & "))))" & vbLf
+                            codeList.Add indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & "$image_base64_dict[" & q & pictureName & q & "]" & "))))" & vbLf
                         End If
                     ElseIf imageMode = "base64" Then
-                        r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & q & base64Str & q & "))))" & vbLf
+                        codeList.Add indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Bitmap", useCls) & "::new(" & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromStream([System.IO.MemoryStream]::new([Convert]::FromBase64String(" & q & base64Str & q & "))))" & vbLf
                     ElseIf ContainsValue(Array("file", "reference-only"), imageMode) Then
                         If useCls Then
-                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile((Join-Path (Get-Variable BASE_DIR).Value " & q & fso.GetFileName(picturePath) & q & "))" & vbLf
+                            codeList.Add indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile((Join-Path (Get-Variable BASE_DIR).Value " & q & fso.GetFileName(picturePath) & q & "))" & vbLf
                         Else
-                            r = r & indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile((Join-Path $BASE_DIR " & q & fso.GetFileName(picturePath) & q & "))" & vbLf
+                            codeList.Add indent & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile((Join-Path $BASE_DIR " & q & fso.GetFileName(picturePath) & q & "))" & vbLf
                         End If
                     End If
                     
-                    r = r & indent & "" & controlVarName & ".SizeMode = " & q & picSizeMode & q & vbLf
+                    codeList.Add indent & "" & controlVarName & ".SizeMode = " & q & picSizeMode & q & vbLf
                 Else
-                    r = r & indent & "#" & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile(" & q & "C:\path\to\your\image.png" & q & ")" & vbLf
-                    r = r & indent & "#" & controlVarName & ".SizeMode = " & q & picSizeMode & q & vbLf
+                    codeList.Add indent & "#" & controlVarName & ".Image = " & DotNetTypeLiteral("System.Drawing.Image", useCls) & "::FromFile(" & q & "C:\path\to\your\image.png" & q & ")" & vbLf
+                    codeList.Add indent & "#" & controlVarName & ".SizeMode = " & q & picSizeMode & q & vbLf
                 End If
             End If
             
-            r = r & vbLf
+            codeList.Add vbLf
                 
         Next ctrl
-        r = r & SetWinFormsButtonValues(ctrls, indent, prefix, useCls) & vbLf
+        codeList.Add SetWinFormsButtonValues(ctrls, indent, prefix, useCls) & vbLf
         If Not useCls And Not noMainLoop Then
-            r = r & formName & ".ShowDialog() | Out-Null"
+            codeList.Add formName & ".ShowDialog() | Out-Null"
         End If
         
         If useCls Then
-            r = r & "    " & "}" & vbLf
+            codeList.Add "    " & "}" & vbLf
         End If
         
         If useCls Then
-            r = r & "}" & vbLf & vbLf
+            codeList.Add "}" & vbLf & vbLf
         End If
         
     Next root
@@ -665,30 +664,32 @@ Public Function GeneratePSWinFormsCode(ByVal frms As Variant, Optional ByVal use
             clsNumber = clsNumber + 1
             instanceName = "$obj_" & root.Name
             If clsNumber <= 1 Then
-                r = r & instanceName & " = [" & root.Name & "]::new()" & vbLf
+                codeList.Add instanceName & " = [" & root.Name & "]::new()" & vbLf
                 toplevelInstanceName = instanceName
             Else
-                r = r & instanceName & " = [" & root.Name & "]::new()" & vbLf
+                codeList.Add instanceName & " = [" & root.Name & "]::new()" & vbLf
             End If
-            r = r & instanceName & "." & FORM_WINDOW_NAME & ".ShowDialog() | Out-Null" & vbLf
+            codeList.Add instanceName & "." & FORM_WINDOW_NAME & ".ShowDialog() | Out-Null" & vbLf
         Next
     End If
     
     
+    result = JoinCollection(codeList, "")
+    
     If imageMode = "base64-dict" Then
-        base64PictureDictStr = "@{" & vbLf & Join(Collection2Array(base64PictureDictStrs), vbLf) & vbLf & "}" & vbLf
-        r = VBA.Replace(r, uniqueStringToReplace, "$image_base64_dict = " & base64PictureDictStr & vbLf)
+        base64PictureDictStr = "@{" & vbLf & JoinCollection(base64PictureDictStrs, vbLf) & vbLf & "}" & vbLf
+        result = VBA.Replace(result, uniqueStringToReplace, "$image_base64_dict = " & base64PictureDictStr & vbLf)
     Else
-        r = VBA.Replace(r, uniqueStringToReplace, "")
+        result = VBA.Replace(result, uniqueStringToReplace, "")
     End If
     
     If imageMode = "base64-json" Then
-        base64PictureJsonStr = "{" & vbLf & Join(Collection2Array(base64PictureJsonStrs), "," & vbLf) & vbLf & "}" & vbLf
-        Call SaveUTF8Text_NoBOM(saveDir & "\" & "image_base64.json", base64PictureJsonStr)
+        base64PictureJsonStr = "{" & vbLf & JoinCollection(base64PictureJsonStrs, "," & vbLf) & vbLf & "}" & vbLf
+        Call SaveUtf8TextNoBom(saveDir & "\" & "image_base64.json", base64PictureJsonStr)
     End If
 
     
-    GeneratePSWinFormsCode = r
+    GeneratePSWinFormsCode = result
 End Function
 
 Private Function GetSaveDirPath() As String
@@ -783,7 +784,7 @@ Private Function DotNetTypeLiteral(ByVal dotNetTypeName As String, ByVal useCls 
 End Function
 
 Private Function GetBorderSetting(ByVal ctrl As Object, ByVal useCls As Boolean) As String
-    Dim r As String
+    Dim result As String
     Const q As String = """"
     Dim borderSetting As String
     borderSetting = "FixedSingle"
@@ -807,15 +808,15 @@ Private Function GetBorderSetting(ByVal ctrl As Object, ByVal useCls As Boolean)
             End Select
     End Select
 
-    r = ".BorderStyle = " & q & borderSetting & q
-    GetBorderSetting = r
+    result = ".BorderStyle = " & q & borderSetting & q
+    GetBorderSetting = result
 End Function
 
 Private Function GetTextAlignSetting(ByVal ctrl As Object, ByVal useCls As Boolean) As String
-    Dim r As String
+    Dim result As String
     Const q As String = """"
     Dim position As String
-    r = ""
+    result = ""
     
     If TypeName(ctrl) = "TextBox" Then
         Select Case ctrl.TextAlign
@@ -852,70 +853,70 @@ Private Function GetTextAlignSetting(ByVal ctrl As Object, ByVal useCls As Boole
         End Select
     End If
     
-    r = r & ".TextAlign = " & q & position & q
-    GetTextAlignSetting = r
+    result = result & ".TextAlign = " & q & position & q
+    GetTextAlignSetting = result
 End Function
 
 Private Function GetWinFormsControlName(ByVal ctrl As Object) As String
-    Dim r As String
+    Dim result As String
     Select Case TypeName(ctrl)
         Case "Label"
-            r = "Label"
+            result = "Label"
         Case "CommandButton"
-            r = "Button"
+            result = "Button"
         Case "Frame"
             If ctrl.caption = "" Then
-                r = "Panel"
+                result = "Panel"
             Else
-                r = "GroupBox"
+                result = "GroupBox"
             End If
         Case "TextBox"
-            r = "TextBox"
+            result = "TextBox"
         Case "SpinButton"
-            r = "NumericUpDown"
+            result = "NumericUpDown"
         Case "ListBox"
-            r = "ListBox"
+            result = "ListBox"
         Case "CheckBox"
-            r = "CheckBox"
+            result = "CheckBox"
         Case "ToggleButton"
-            r = "CheckBox"
+            result = "CheckBox"
         Case "OptionButton"
-            r = "RadioButton"
+            result = "RadioButton"
         Case "Image"
-            r = "PictureBox"
+            result = "PictureBox"
         Case "ScrollBar"
             Select Case ctrl.orientation
                 Case fmOrientationAuto
                     If ctrl.width > ctrl.height Then
-                        r = "HScrollBar"
+                        result = "HScrollBar"
                     Else
-                        r = "VScrollBar"
+                        result = "VScrollBar"
                     End If
                     
                 Case fmOrientationVertical
-                    r = "VScrollBar"
+                    result = "VScrollBar"
                 Case fmOrientationHorizontal
-                    r = "HScrollBar"
+                    result = "HScrollBar"
                 Case Else
-                    r = "VScrollBar"
+                    result = "VScrollBar"
             End Select
         Case "ComboBox"
-            r = "ComboBox"
+            result = "ComboBox"
         Case "MultiPage"
-            r = "TabControl"
+            result = "TabControl"
         Case Else
-            r = ""
+            result = ""
             
             If IsListView(ctrl) Then
-                r = "ListView"
+                result = "ListView"
             End If
             
             If IsTreeView(ctrl) Then
-                r = "TreeView"
+                result = "TreeView"
             End If
             
     End Select
-    GetWinFormsControlName = r
+    GetWinFormsControlName = result
 End Function
 
 Private Function IsListView(ByVal ctrl As Object) As Boolean
@@ -977,49 +978,53 @@ End Function
 
 
 Private Function SetWinFormsButtonValues(ByVal ctrls As Variant, ByVal indent As String, ByVal prefix As String, ByVal useCls As Boolean) As String
+    Dim codeList As New Collection
     Dim ctrl As Variant
     Dim controlVarName As String
     Dim value As Boolean
-    Dim r As String
-    r = ""
+    Dim result As String
     For Each ctrl In ctrls
         controlVarName = GenerateCtrlVarName(ctrl, prefix, useCls)
         If ContainsValue(Array("OptionButton", "CheckBox", "ToggleButton"), TypeName(ctrl)) Then
-            r = r & indent & controlVarName & ".Checked = " & "$" & LCase(CBool(ctrl.value)) & vbLf
+            codeList.Add indent & controlVarName & ".Checked = " & "$" & LCase(CBool(ctrl.value)) & vbLf
         End If
     Next
-    SetWinFormsButtonValues = r
+    result = JoinCollection(codeList, "")
+    SetWinFormsButtonValues = result
 End Function
 
 Private Function GetListBoxValue(ByVal ctrl As Object, ByVal indent As String) As String
     ' Retrieve the items of a ListBox or ComboBox as a string in the format @("1", "2", "3").
     Const q As String = """"
+    Dim codeList As New Collection
     Dim item As Variant
     Dim i As Long: i = 0
-    Dim r As String
+    Dim result As String
     Dim listIndent As String: listIndent = "    " & indent
     Const maxItemsPerLine As Long = 3
-    r = ""
     If ctrl.ListCount > 0 Then
-        If ctrl.ListCount > maxItemsPerLine Then r = r & vbLf & listIndent
+        If ctrl.ListCount > maxItemsPerLine Then codeList.Add vbLf & listIndent
         For Each item In ctrl.List
             i = i + 1
-            r = r & q & Convert2PowerShellFormatText(item) & q
+            codeList.Add q & Convert2PowerShellFormatText(item) & q
             If Not i = ctrl.ListCount Then
-                r = r & ", "
-                If i Mod maxItemsPerLine = 0 And ctrl.ListCount > maxItemsPerLine Then r = r & vbLf & listIndent
+                codeList.Add ", "
+                If i Mod maxItemsPerLine = 0 And ctrl.ListCount > maxItemsPerLine Then codeList.Add vbLf & listIndent
             Else
-                If ctrl.ListCount > maxItemsPerLine Then r = r & vbLf
+                If ctrl.ListCount > maxItemsPerLine Then codeList.Add vbLf
                 Exit For
             End If
         Next item
     End If
+    
+    result = JoinCollection(codeList, "")
+    
     If ctrl.ListCount > maxItemsPerLine Then
-        r = "@(" & r & indent & ")"
+        result = "@(" & result & indent & ")"
     Else
-        r = "@(" & r & ")"
+        result = "@(" & result & ")"
     End If
-    GetListBoxValue = r
+    GetListBoxValue = result
 End Function
 
 Private Function DefineListViewColumns(ByVal ctrl As Object, ByVal indent As String, ByVal prefix As String, ByVal useCls As Boolean) As String
@@ -1043,19 +1048,19 @@ Private Function DefineListViewColumns(ByVal ctrl As Object, ByVal indent As Str
     ' $listView1.Columns.Add($ListView1_col1) | Out-Null
     ' $listView1.Columns.Add($ListView1_col2) | Out-Null
     ' $listView1.Columns.Add($ListView1_col3) | Out-Null
+    Dim codeList As New Collection
     Dim objHeaders As Object
     Set objHeaders = ctrl.ColumnHeaders
     Dim controlVarName As String
     Dim i As Long
     Dim item As Variant
-    Dim r As String
+    Dim result As String
     Dim colVarName As String
     Dim headerText As String
     Dim colWidth As Long
     Dim colAlign As String
     Const q As String = """"
     controlVarName = GenerateCtrlVarName(ctrl, prefix, useCls)
-    r = ""
     i = 0
     For Each item In objHeaders
         i = i + 1
@@ -1063,21 +1068,22 @@ Private Function DefineListViewColumns(ByVal ctrl As Object, ByVal indent As Str
         headerText = Convert2PowerShellFormatText(item.text)
         colAlign = GetPSWinFormsListViewAlignment(item)
         colWidth = UserFormSizeToPixel(item.width)
-        r = r & indent & colVarName & " = " & "New-Object System.Windows.Forms.ColumnHeader" & vbLf
-        r = r & indent & colVarName & ".Text = " & q & headerText & q & vbLf
-        r = r & indent & colVarName & ".Width = " & colWidth & vbLf
-        r = r & indent & colVarName & ".TextAlign = " & q & colAlign & q & vbLf
+        codeList.Add indent & colVarName & " = " & "New-Object System.Windows.Forms.ColumnHeader" & vbLf
+        codeList.Add indent & colVarName & ".Text = " & q & headerText & q & vbLf
+        codeList.Add indent & colVarName & ".Width = " & colWidth & vbLf
+        codeList.Add indent & colVarName & ".TextAlign = " & q & colAlign & q & vbLf
     Next item
-    
     
     i = 0
     For Each item In objHeaders
         i = i + 1
         colVarName = controlVarName & "_col" & i
-        r = r & indent & controlVarName & ".Columns.Add(" & colVarName & ") | Out-Null" & vbLf
+        codeList.Add indent & controlVarName & ".Columns.Add(" & colVarName & ") | Out-Null" & vbLf
     Next item
     
-    DefineListViewColumns = r
+    result = JoinCollection(codeList, "")
+    
+    DefineListViewColumns = result
 End Function
 
 
@@ -1111,12 +1117,10 @@ Private Function GetListViewItems(ByVal ctrl As Object, ByVal indent As String) 
     Dim i As Long
     Dim coll As Collection
     Dim resultColl As New Collection
-    Dim arr() As Variant
-    Dim r As String
+    Dim result As String
     Const arrayLiteralStart As String = "@("
     Const arrayLiteralEnd As String = ")"
     Const q As String = """"
-    r = ""
     For Each item In ctrl.ListItems
         Set coll = New Collection
         coll.Add q & Convert2PowerShellFormatText(item.text) & q
@@ -1126,18 +1130,16 @@ Private Function GetListViewItems(ByVal ctrl As Object, ByVal indent As String) 
             coll.Add q & Convert2PowerShellFormatText(item.SubItems(i)) & q
         Next
         
-        arr = Collection2Array(coll)
-        resultColl.Add "," & arrayLiteralStart & Join(arr, ", ") & arrayLiteralEnd
+        resultColl.Add "," & arrayLiteralStart & JoinCollection(coll, ", ") & arrayLiteralEnd
         
     Next
     
-    arr = Collection2Array(resultColl)
     If resultColl.Count > 0 Then
-        r = r & arrayLiteralStart & vbLf & indent & "    " & Join(arr, "" & vbLf & indent & "    ") & vbLf & indent & arrayLiteralEnd
+        result = arrayLiteralStart & vbLf & indent & "    " & JoinCollection(resultColl, "" & vbLf & indent & "    ") & vbLf & indent & arrayLiteralEnd
     Else
-        r = r & arrayLiteralStart & arrayLiteralEnd
+        result = arrayLiteralStart & arrayLiteralEnd
     End If
-    GetListViewItems = r
+    GetListViewItems = result
 End Function
 
 Private Function GetAllTreeViewNodesBfs(ByVal treeviewCtrl As Object) As Collection
@@ -1225,10 +1227,9 @@ Private Function GenerateBatchCode() As String
     ' Generate batch(.bat) code for running PowerShell code
     Const q As String = """"
     Dim code As String
-    Dim codeColl As New Collection
-    Dim codeArray() As Variant
+    Dim codeList As New Collection
 
-    With codeColl
+    With codeList
         .Add ":DUMMY for($i=1;$i -eq 0;$i++) {echo DUMMY} <#"
         .Add "@echo off"
         .Add "chcp 65001 > nul"
@@ -1244,8 +1245,7 @@ Private Function GenerateBatchCode() As String
         .Add "#>"
         .Add "# The following is PowerShell code."
     End With
-    codeArray = Collection2Array(codeColl)
-    code = Join(codeArray, vbLf)
+    code = JoinCollection(codeList, vbLf)
     GenerateBatchCode = code
 End Function
 
@@ -1611,8 +1611,8 @@ Private Function GenerateUUIDv4() As String
     GenerateUUIDv4 = LCase$(hexStr)
 End Function
 
-Private Sub SaveUTF8BOMText(ByVal filePath As String, ByVal textData As String)
-    ' Save the specified string as UTF-8 without BOM
+Private Sub SaveUtf8TextWithBom(ByVal filePath As String, ByVal textData As String)
+    ' Save the specified string as UTF-8 with BOM
     Dim stream As Object
     Dim bytes() As Byte
     
@@ -1621,7 +1621,7 @@ Private Sub SaveUTF8BOMText(ByVal filePath As String, ByVal textData As String)
     textData = VBA.Replace(textData, vbCr, vbLf)
     textData = VBA.Replace(textData, vbLf, vbNewLine)
     
-    ' Convert to UTF-8 and remove BOM
+    ' Convert to UTF-8
     Set stream = CreateObject("ADODB.Stream")
     stream.Type = 2 ' Text mode
     stream.Charset = "utf-8"
@@ -1643,7 +1643,7 @@ Private Sub SaveUTF8BOMText(ByVal filePath As String, ByVal textData As String)
     Set stream = Nothing
 End Sub
 
-Private Sub SaveUTF8Text_NoBOM(ByVal filePath As String, ByVal textData As String)
+Private Sub SaveUtf8TextNoBom(ByVal filePath As String, ByVal textData As String)
     ' Save the specified string as UTF-8 without BOM
     Dim stream As Object
     Dim bytes() As Byte
@@ -1731,7 +1731,7 @@ Private Function SortFormControlsByDepth(ByVal frmControls As Variant) As Collec
         tempColl.Add VBA.Array(depth, ctrl)
     Next ctrl
     If tempColl.Count > 0 Then
-        tempArray = Collection2Array(tempColl)
+        tempArray = CollectionToArray(tempColl)
         Call InsertionSortJaggedArray(tempArray, reverse:=False)
         For Each item In tempArray
             sortedColl.Add item(1)
@@ -1740,7 +1740,7 @@ Private Function SortFormControlsByDepth(ByVal frmControls As Variant) As Collec
     Set SortFormControlsByDepth = sortedColl
 End Function
 
-Private Function Collection2Array(ByVal coll As Collection, Optional ByVal isStartIdx1 As Boolean = False) As Variant()
+Private Function CollectionToArray(ByVal coll As Collection, Optional ByVal isStartIdx1 As Boolean = False) As Variant()
     ' Convert a Collection to an array
     ' If isStartIdx1 is True, create an array starting from index 1 (to match Collection numbering)
     Dim arr() As Variant
@@ -1765,10 +1765,10 @@ Private Function Collection2Array(ByVal coll As Collection, Optional ByVal isSta
     Else
         arr = VBA.Array()
     End If
-    Collection2Array = arr
+    CollectionToArray = arr
 End Function
 
-Private Function Array2Collection(ByVal arr As Variant) As Collection
+Private Function ArrayToCollection(ByVal arr As Variant) As Collection
     ' Convert an array to a collection
     ' ArrayLength (Function) is dependency
     Dim coll As New Collection
@@ -1784,7 +1784,7 @@ Private Function Array2Collection(ByVal arr As Variant) As Collection
             coll.Add arr(i)
         Next i
     End If
-    Set Array2Collection = coll
+    Set ArrayToCollection = coll
 End Function
 
 Private Function ArrayLength(ByVal arr As Variant) As Long
@@ -1949,13 +1949,19 @@ Private Function ReverseCollection(ByVal srcColl As Collection) As Collection
     Dim resultColl As Collection
     Dim arr() As Variant
     If srcColl.Count > 0 Then
-        arr = Collection2Array(srcColl)
+        arr = CollectionToArray(srcColl)
         arr = ReverseArray(arr)
-        Set resultColl = Array2Collection(arr)
+        Set resultColl = ArrayToCollection(arr)
     Else
         Set resultColl = New Collection
     End If
     Set ReverseCollection = resultColl
 End Function
 
-
+Private Function JoinCollection(ByVal coll As Collection, Optional ByVal delimiter As String = "") As String
+    Dim arr() As Variant
+    Dim result As String
+    arr = CollectionToArray(coll)
+    result = Join(arr, delimiter)
+    JoinCollection = result
+End Function
